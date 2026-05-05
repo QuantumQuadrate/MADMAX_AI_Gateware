@@ -77,7 +77,7 @@ def generate_experiment(config_file: pathlib.Path = typer.Option(..., "--config"
     print(f"[green]Experiment generated at {output or f'build/generated/experiments/{cfg.experiment.name}_test.py'}[/green]")
 
 @app.command()
-def build_gateware(config_file: pathlib.Path = typer.Option(..., "--config"), dry_run: bool = True):
+def build_gateware(config_file: pathlib.Path = typer.Option(..., "--config"), dry_run: bool = typer.Option(False, "--dry-run")):
     """Build gateware."""
     cfg = load_config(config_file)
     bg.build_gateware(cfg, dry_run)

@@ -39,6 +39,7 @@
     "entangler": {
       "type": "object",
       "properties": {
+        "mode": {"type": "string", "default": "default"},
         "num_inputs": {"type": "integer"},
         "num_outputs": {"type": "integer"},
         "coincidence_window_mu": {"type": "integer"},

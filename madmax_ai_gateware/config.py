@@ -20,6 +20,7 @@ class Hardware(BaseModel):
     output_pads: List[str]
 
 class Entangler(BaseModel):
+    mode: str = "default"
     num_inputs: int
     num_outputs: int
     coincidence_window_mu: int

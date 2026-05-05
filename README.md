@@ -51,6 +51,23 @@ Run `madmax submodules init` or `./scripts/init_submodules.sh`.
 
 `madmax build-gateware --config configs/experiments/2in_2out.yaml --dry-run`
 
+## Example Experiments
+
+### 2in_2out Mode
+
+A basic 2-input 2-output entangler configuration for testing.
+
+- Config: `configs/experiments/2in_2out.yaml`
+- Use: `madmax validate --config configs/experiments/2in_2out.yaml`
+
+### Atom-Photon Mode
+
+A specialized mode for atom-photon entanglement experiments with single input/output.
+
+- Config: `configs/experiments/atom_photon_mode.yaml`
+- Features: Optimized for low-latency photon detection and atom state measurement
+- Use: `madmax validate --config configs/experiments/atom_photon_mode.yaml`
+
 ## AI Pipeline
 
 The future AI pipeline will work as follows:

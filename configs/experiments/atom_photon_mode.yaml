@@ -1,0 +1,30 @@
+experiment:
+  name: "atom_photon_mode"
+  description: "Atom-photon entanglement mode with single input and output for quantum experiments"
+
+target:
+  board: "kasli_soc"
+  artiq_version: 7
+  variant: "default"
+
+repositories:
+  entangler_core_path: "repos/madmax-entangler-core"
+  artiq_zynq_path: "repos/madmax-artiq-zynq"
+
+hardware:
+  dio_eem: 0
+  input_pads: ["DIO0"]
+  output_pads: ["DIO1"]
+
+entangler:
+  mode: "atom_photon"
+  num_inputs: 1
+  num_outputs: 1
+  coincidence_window_mu: 50
+  timeout_mu: 500
+  fast_branch: true
+
+build:
+  output_dir: "build"
+  dry_run: false
+  command_template: "cd {repositories[artiq_zynq_path]} && make build BOARD={target[board]} VARIANT={target[variant]} MODE={entangler[mode]}"
