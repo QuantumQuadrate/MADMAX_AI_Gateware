@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "experiment": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string"},
+        "description": {"type": "string"}
+      },
+      "required": ["name", "description"]
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "board": {"type": "string"},
+        "artiq_version": {"type": "integer"},
+        "variant": {"type": "string"}
+      },
+      "required": ["board", "artiq_version", "variant"]
+    },
+    "repositories": {
+      "type": "object",
+      "properties": {
+        "entangler_core_path": {"type": "string"},
+        "artiq_zynq_path": {"type": "string"}
+      },
+      "required": ["entangler_core_path", "artiq_zynq_path"]
+    },
+    "hardware": {
+      "type": "object",
+      "properties": {
+        "dio_eem": {"type": "integer"},
+        "input_pads": {"type": "array", "items": {"type": "string"}},
+        "output_pads": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": ["dio_eem", "input_pads", "output_pads"]
+    },
+    "entangler": {
+      "type": "object",
+      "properties": {
+        "num_inputs": {"type": "integer"},
+        "num_outputs": {"type": "integer"},
+        "coincidence_window_mu": {"type": "integer"},
+        "timeout_mu": {"type": "integer"},
+        "fast_branch": {"type": "boolean"}
+      },
+      "required": ["num_inputs", "num_outputs", "coincidence_window_mu", "timeout_mu", "fast_branch"]
+    },
+    "build": {
+      "type": "object",
+      "properties": {
+        "output_dir": {"type": "string"},
+        "dry_run": {"type": "boolean"},
+        "command_template": {"type": "string"}
+      },
+      "required": ["output_dir", "dry_run", "command_template"]
+    }
+  },
+  "required": ["experiment", "target", "repositories", "hardware", "entangler", "build"]
+}

@@ -1,0 +1,16 @@
+[entangler]
+num_inputs = {{ entangler.num_inputs }}
+num_outputs = {{ entangler.num_outputs }}
+coincidence_window_mu = {{ entangler.coincidence_window_mu }}
+timeout_mu = {{ entangler.timeout_mu }}
+fast_branch = {{ entangler.fast_branch }}
+
+[target]
+board = "{{ target.board }}"
+artiq_version = {{ target.artiq_version }}
+variant = "{{ target.variant }}"
+
+[hardware]
+dio_eem = {{ hardware.dio_eem }}
+input_pads = {{ hardware.input_pads }}
+output_pads = {{ hardware.output_pads }}

@@ -1,0 +1,24 @@
+device_db = {
+    "core": {
+        "type": "local",
+        "module": "artiq.coredevice.core",
+        "class": "Core",
+        "arguments": {"host": "127.0.0.1", "ref_period": 1e-9}
+    },
+{% for pad in hardware.input_pads %}
+    "{{ pad }}": {
+        "type": "local",
+        "module": "artiq.coredevice.ttl",
+        "class": "TTLInOut",
+        "arguments": {"channel": {{ loop.index0 }}}
+    },
+{% endfor %}
+{% for pad in hardware.output_pads %}
+    "{{ pad }}": {
+        "type": "local",
+        "module": "artiq.coredevice.ttl",
+        "class": "TTLInOut",
+        "arguments": {"channel": {{ loop.index0 + hardware.input_pads|length }}}
+    },
+{% endfor %}
+}

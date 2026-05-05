@@ -1,0 +1,9 @@
+[submodule "repos/madmax-artiq-env"]
+	path = repos/madmax-artiq-env
+	url = https://github.com/QuantumQuadrate/madmax-artiq-env.git
+[submodule "repos/madmax-artiq-zynq"]
+	path = repos/madmax-artiq-zynq
+	url = https://github.com/QuantumQuadrate/madmax-artiq-zynq.git
+[submodule "repos/madmax-entangler-core"]
+	path = repos/madmax-entangler-core
+	url = https://github.com/QuantumQuadrate/madmax-entangler-core.git
