@@ -1,24 +1,46 @@
+# Generated from {{ source_config }}
+# Source of truth: experiment YAML.
+
 device_db = {
     "core": {
         "type": "local",
         "module": "artiq.coredevice.core",
         "class": "Core",
-        "arguments": {"host": "127.0.0.1", "ref_period": 1e-9}
+        "arguments": {"host": "{{ core_host }}", "ref_period": 1e-9},
     },
-{% for pad in hardware.input_pads %}
-    "{{ pad }}": {
+    "core_log": {
+        "type": "controller",
+        "host": "::1",
+        "port": 1068,
+        "command": "aqctl_corelog -p {port} --bind {bind} {{ core_host }}",
+    },
+    "entangler": {
+        "type": "local",
+        "module": "entangler.driver",
+        "class": "Entangler",
+        "arguments": {
+            "num_inputs": {{ cfg.entangler.num_inputs }},
+            "num_outputs": {{ cfg.entangler.num_outputs }},
+            "coincidence_window_mu": {{ cfg.entangler.coincidence_window_mu }},
+            "timeout_mu": {{ cfg.entangler.timeout_mu }},
+            "fast_branch": {{ cfg.entangler.fast_branch }},
+        },
+    },
+{% for pad in cfg.hardware.input_pads %}
+    "entangler_input{{ loop.index0 }}": {
         "type": "local",
         "module": "artiq.coredevice.ttl",
         "class": "TTLInOut",
-        "arguments": {"channel": {{ loop.index0 }}}
+        "arguments": {"channel": "{{ pad }}", "dio_eem": {{ cfg.hardware.dio_eem }}},
     },
 {% endfor %}
-{% for pad in hardware.output_pads %}
-    "{{ pad }}": {
+{% for pad in cfg.hardware.output_pads %}
+    "entangler_output{{ loop.index0 }}": {
         "type": "local",
         "module": "artiq.coredevice.ttl",
-        "class": "TTLInOut",
-        "arguments": {"channel": {{ loop.index0 + hardware.input_pads|length }}}
+        "class": "TTLOut",
+        "arguments": {"channel": "{{ pad }}", "dio_eem": {{ cfg.hardware.dio_eem }}},
     },
 {% endfor %}
 }
+

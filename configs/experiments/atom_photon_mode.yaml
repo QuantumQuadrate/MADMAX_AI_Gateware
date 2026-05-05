@@ -1,30 +1,36 @@
 experiment:
-  name: "atom_photon_mode"
-  description: "Atom-photon entanglement mode with single input and output for quantum experiments"
+  name: atom_photon_mode
+  description: Placeholder atom-photon Entangler configuration for future expansion.
 
 target:
-  board: "kasli_soc"
+  board: kasli_soc
   artiq_version: 7
-  variant: "default"
+  variant: entangler_atom_photon
 
 repositories:
-  entangler_core_path: "repos/madmax-entangler-core"
-  artiq_zynq_path: "repos/madmax-artiq-zynq"
+  artiq_env_path: repos/madmax-artiq-env
+  entangler_core_path: repos/madmax-entangler-core
+  artiq_zynq_path: repos/madmax-artiq-zynq
 
 hardware:
   dio_eem: 0
-  input_pads: ["DIO0"]
-  output_pads: ["DIO1"]
+  input_pads:
+    - dio0
+    - dio1
+  output_pads:
+    - dio2
+    - dio3
 
 entangler:
-  mode: "atom_photon"
-  num_inputs: 1
-  num_outputs: 1
-  coincidence_window_mu: 50
-  timeout_mu: 500
+  num_inputs: 2
+  num_outputs: 2
+  coincidence_window_mu: 250
+  timeout_mu: 10000
   fast_branch: true
+  requested_goal: atom-photon coincidence smoke mode
 
 build:
-  output_dir: "build"
-  dry_run: false
-  command_template: "cd {repositories[artiq_zynq_path]} && make build BOARD={target[board]} VARIANT={target[variant]} MODE={entangler[mode]}"
+  output_dir: build/generated
+  dry_run: true
+  command_template: "cd {artiq_zynq_path} && nix develop --command python src/gateware/{board}.py -g {gateware_build_dir} {artiq_description_json}"
+

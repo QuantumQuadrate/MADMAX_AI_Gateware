@@ -1,83 +1,136 @@
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
 import typer
-from rich import print
-import pathlib
-from .validate import load_config, validate_config
-from .submodules import check_submodules, init_submodules
-from . import generate_settings as gs
+from rich.console import Console
+
+from . import build_gateware as bg
 from . import generate_device_db as gdb
 from . import generate_experiment as ge
-from . import build_gateware as bg
-from .paths import WORKSPACE_ROOT
+from . import generate_settings as gs
+from .config import load_config
+from .paths import DEFAULT_CONFIG, display_path
+from .submodules import check_submodules, init_submodules
+from .validate import load_and_validate, validate_config
 
-app = typer.Typer()
+console = Console()
+app = typer.Typer(help="MADMAX AI-assisted gateware workspace tooling.")
+submodules_app = typer.Typer(help="Manage external repository submodules.")
+app.add_typer(submodules_app, name="submodules")
+
+
+def _config_option() -> Path:
+    return typer.Option(DEFAULT_CONFIG, "--config", "-c", help="Experiment YAML config.")
+
 
 @app.command()
-def setup():
-    """Check if uv is installed and submodules are ready."""
-    try:
-        import subprocess
-        subprocess.run(["uv", "--version"], check=True, capture_output=True)
-        print("[green]uv is installed.[/green]")
-    except:
-        print("[red]uv is not installed. Please install uv: https://github.com/astral-sh/uv[/red]")
-        return
+def setup() -> None:
+    """Check uv and submodule readiness."""
+    if shutil.which("uv"):
+        console.print("[green]uv is installed.[/green]")
+    else:
+        console.print("[red]uv is not installed.[/red]")
+        console.print("Install uv, then run: [bold]uv sync[/bold]")
 
     issues = check_submodules()
     if issues:
-        print("[red]Submodule issues:[/red]")
+        console.print("[yellow]Submodule setup is incomplete:[/yellow]")
         for issue in issues:
-            print(f"  - {issue}")
-        print("Run 'madmax submodules init' to fix.")
+            console.print(f"  - {issue}")
+        console.print("Run: [bold]uv run madmax submodules init[/bold]")
     else:
-        print("[green]Submodules are ready.[/green]")
+        console.print("[green]Submodules are initialized.[/green]")
 
-@app.command()
-def submodules_init():
-    """Initialize git submodules."""
-    try:
-        init_submodules()
-        print("[green]Submodules initialized.[/green]")
-    except Exception as e:
-        print(f"[red]Failed to initialize submodules: {e}[/red]")
 
-@app.command()
-def validate(config_file: pathlib.Path = typer.Option(..., "--config", help="Path to experiment config YAML")):
+@submodules_app.command("init")
+def submodules_init() -> None:
+    """Initialize or update git submodules recursively."""
+    result = init_submodules()
+    if result.stdout.strip():
+        console.print(result.stdout.strip())
+    if result.stderr.strip():
+        console.print(result.stderr.strip())
+    console.print("[green]Submodules initialized.[/green]")
+
+
+@app.command("validate")
+def validate_command(
+    config: Path = _config_option(),
+    require_submodules: bool = typer.Option(False, "--require-submodules", help="Require submodule directories to exist."),
+) -> None:
     """Validate an experiment config."""
-    try:
-        cfg = load_config(config_file)
-        errors = validate_config(cfg)
-        if errors:
-            print("[red]Validation errors:[/red]")
-            for error in errors:
-                print(f"  - {error}")
-        else:
-            print("[green]Config is valid.[/green]")
-    except Exception as e:
-        print(f"[red]Failed to validate config: {e}[/red]")
+    cfg, errors = load_and_validate(config, require_submodules=require_submodules)
+    if errors:
+        console.print("[red]Validation failed:[/red]")
+        for error in errors:
+            console.print(f"  - {error}")
+        raise typer.Exit(1)
+    assert cfg is not None
+    console.print(f"[green]Config is valid:[/green] {display_path(config)}")
 
-@app.command()
-def generate_settings(config_file: pathlib.Path = typer.Option(..., "--config"), output: pathlib.Path = None):
-    """Generate settings.toml from config."""
-    cfg = load_config(config_file)
-    gs.generate_settings(cfg, output)
-    print(f"[green]Settings generated at {output or 'build/generated/settings.toml'}[/green]")
 
-@app.command()
-def generate_device_db(config_file: pathlib.Path = typer.Option(..., "--config"), output: pathlib.Path = None):
-    """Generate device_db.py from config."""
-    cfg = load_config(config_file)
-    gdb.generate_device_db(cfg, output)
-    print(f"[green]Device DB generated at {output or 'build/generated/device_db.py'}[/green]")
+@app.command("generate-settings")
+def generate_settings_command(
+    config: Path = _config_option(),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output settings.toml path."),
+) -> None:
+    """Generate settings.toml from the experiment config."""
+    cfg = _load_valid_config(config)
+    path = gs.generate_settings(cfg, output)
+    console.print(f"[green]Generated settings:[/green] {display_path(path)}")
 
-@app.command()
-def generate_experiment(config_file: pathlib.Path = typer.Option(..., "--config"), output: pathlib.Path = None):
-    """Generate test experiment from config."""
-    cfg = load_config(config_file)
-    ge.generate_experiment(cfg, output)
-    print(f"[green]Experiment generated at {output or f'build/generated/experiments/{cfg.experiment.name}_test.py'}[/green]")
 
-@app.command()
-def build_gateware(config_file: pathlib.Path = typer.Option(..., "--config"), dry_run: bool = typer.Option(False, "--dry-run")):
-    """Build gateware."""
-    cfg = load_config(config_file)
-    bg.build_gateware(cfg, dry_run)
+@app.command("generate-device-db")
+def generate_device_db_command(
+    config: Path = _config_option(),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output device_db.py path."),
+    core_host: str = typer.Option("192.168.1.75", "--core-host", help="Kasli-SoC core host for device_db.py."),
+) -> None:
+    """Generate a matching ARTIQ device_db.py."""
+    cfg = _load_valid_config(config)
+    path = gdb.generate_device_db(cfg, output, core_host=core_host)
+    console.print(f"[green]Generated device DB:[/green] {display_path(path)}")
+
+
+@app.command("generate-experiment")
+def generate_experiment_command(
+    config: Path = _config_option(),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file or directory."),
+) -> None:
+    """Generate a simple ARTIQ smoke-test experiment."""
+    cfg = _load_valid_config(config)
+    path = ge.generate_experiment(cfg, output)
+    console.print(f"[green]Generated smoke experiment:[/green] {display_path(path)}")
+
+
+@app.command("build-gateware")
+def build_gateware_command(
+    config: Path = _config_option(),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the build command instead of running it."),
+) -> None:
+    """Build or dry-run the Kasli-SoC gateware command."""
+    cfg = _load_valid_config(config)
+    effective_dry_run = dry_run or cfg.build.dry_run
+    if effective_dry_run:
+        for line in bg.dry_run_lines(cfg):
+            console.print(line)
+        return
+
+    bg.build_gateware(cfg, dry_run=False)
+
+
+def _load_valid_config(config: Path):
+    cfg = load_config(config)
+    errors = validate_config(cfg)
+    if errors:
+        for error in errors:
+            console.print(f"[red]Validation error:[/red] {error}")
+        raise typer.Exit(1)
+    return cfg
+
+
+if __name__ == "__main__":
+    app()
+

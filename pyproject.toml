@@ -2,16 +2,20 @@
 name = "madmax-ai-gateware"
 version = "0.1.0"
 description = "AI-assisted workspace for MADMAX Kasli-SoC gateware development"
-authors = [{name = "QuantumQuadrate", email = "info@quantumquadrate.com"}]
+readme = "README.md"
 requires-python = ">=3.10"
+authors = [{ name = "QuantumQuadrate" }]
 dependencies = [
-    "pydantic",
-    "pyyaml",
-    "jinja2",
-    "typer",
-    "rich",
-    "pytest"
+    "jinja2>=3.1",
+    "pydantic>=2.7",
+    "pytest>=8.0",
+    "pyyaml>=6.0",
+    "rich>=13.7",
+    "typer>=0.12",
 ]
+
+[project.scripts]
+madmax = "madmax_ai_gateware.cli:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -20,5 +24,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["madmax_ai_gateware"]
 
-[project.scripts]
-madmax = "madmax_ai_gateware.cli:app"
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+

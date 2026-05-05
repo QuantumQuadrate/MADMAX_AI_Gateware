@@ -1,21 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Setup script for MADMAX-AI-Gateware
-
-echo "Setting up MADMAX-AI-Gateware..."
-
-# Check if uv is installed
-if ! command -v uv &> /dev/null; then
-    echo "uv is not installed. Please install uv from https://github.com/astral-sh/uv"
-    exit 1
+if ! command -v uv >/dev/null 2>&1; then
+  echo "uv is not installed. Install it first: https://github.com/astral-sh/uv"
+  exit 1
 fi
 
-# Install dependencies
-echo "Installing Python dependencies..."
 uv sync
+uv run madmax setup
 
-# Initialize submodules
-echo "Initializing submodules..."
-./scripts/init_submodules.sh
-
-echo "Setup complete. Run 'madmax setup' to verify."

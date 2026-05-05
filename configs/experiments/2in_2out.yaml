@@ -1,29 +1,36 @@
 experiment:
-  name: "2in_2out"
-  description: "Simple 2 input 2 output entangler test"
+  name: 2in_2out
+  description: Low-latency 2 input / 2 output entangler smoke configuration.
 
 target:
-  board: "kasli_soc"
+  board: kasli_soc
   artiq_version: 7
-  variant: "default"
+  variant: entangler_1dio_2in_2out
 
 repositories:
-  entangler_core_path: "repos/madmax-entangler-core"
-  artiq_zynq_path: "repos/madmax-artiq-zynq"
+  artiq_env_path: repos/madmax-artiq-env
+  entangler_core_path: repos/madmax-entangler-core
+  artiq_zynq_path: repos/madmax-artiq-zynq
 
 hardware:
   dio_eem: 0
-  input_pads: ["DIO0", "DIO1"]
-  output_pads: ["DIO2", "DIO3"]
+  input_pads:
+    - dio0
+    - dio1
+  output_pads:
+    - dio2
+    - dio3
 
 entangler:
   num_inputs: 2
   num_outputs: 2
-  coincidence_window_mu: 100
-  timeout_mu: 1000
+  coincidence_window_mu: 250
+  timeout_mu: 10000
   fast_branch: true
+  requested_goal: low-latency branch decision
 
 build:
-  output_dir: "build"
+  output_dir: build/generated
   dry_run: true
-  command_template: "cd {repositories[artiq_zynq_path]} && make build BOARD={target[board]} VARIANT={target[variant]}"
+  command_template: "cd {artiq_zynq_path} && nix develop --command python src/gateware/{board}.py -g {gateware_build_dir} {artiq_description_json}"
+

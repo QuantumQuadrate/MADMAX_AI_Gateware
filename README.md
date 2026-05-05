@@ -1,92 +1,99 @@
-# MADMAX-AI-Gateware
+# MADMAX AI Gateware
 
-This repository provides a reproducible AI-assisted workspace for MADMAX Kasli-SoC gateware development. It orchestrates two existing repositories as git submodules:
+`MADMAX-AI-Gateware` is the integration and automation layer for MADMAX Kasli-SoC gateware work. It does not copy gateware code from the underlying projects. Instead, it references them as Git submodules and provides deterministic tooling around a high-level experiment YAML file.
 
-1. `madmax-entangler-core` - Contains the custom Migen/Entangler gateware logic.
-2. `madmax-artiq-zynq` - Contains the ARTIQ/Kasli-SoC gateware build flow.
+The core design rule is simple: an AI assistant should change the experiment config first, then Python tooling validates the request and generates the matching runtime files. Generated files are build artifacts, not the source of truth.
 
-This new repository acts as the integration, automation, and AI-pipeline layer.
+## Repositories
 
-## Features
+This workspace orchestrates:
 
-- Pull both repositories as git submodules.
-- Create a Python environment using `uv`.
-- Provide scripts for setup, validation, gateware build, runtime/device_db generation, and test experiment generation.
-- Support for an AI pipeline where a user describes the desired experiment, and the system modifies the right files, builds the gateware, and writes matching ARTIQ test experiments.
+- `repos/madmax-artiq-env`: Python/ARTIQ environment reference.
+- `repos/madmax-artiq-zynq`: Kasli-SoC and ARTIQ Zynq gateware build flow.
+- `repos/madmax-entangler-core`: custom Migen/Entangler logic.
 
-## Installation
+## Setup
 
-1. Ensure `uv` is installed: https://github.com/astral-sh/uv
-2. Clone this repository: `git clone https://github.com/your-org/MADMAX-AI-Gateware.git`
-3. Initialize submodules: `./scripts/init_submodules.sh`
-4. Install Python dependencies: `uv sync`
+Install `uv`, then create the local environment:
 
-## Usage
+```bash
+uv sync
+```
 
-### Setup
+Initialize submodules:
 
-Run `madmax setup` to check if everything is ready.
+```bash
+./scripts/init_submodules.sh
+# or
+uv run madmax submodules init
+```
 
-### Initialize Submodules
+Check the workspace:
 
-Run `madmax submodules init` or `./scripts/init_submodules.sh`.
+```bash
+uv run madmax setup
+```
 
-### Validate Experiment Config
+## Validate A Config
 
-`madmax validate --config configs/experiments/2in_2out.yaml`
+The example config lives at `configs/experiments/2in_2out.yaml`.
 
-### Generate Settings
+```bash
+uv run madmax validate --config configs/experiments/2in_2out.yaml
+```
 
-`madmax generate-settings --config configs/experiments/2in_2out.yaml`
+Validation checks the schema, submodule-relative paths, entangler input/output counts, duplicate pads, and DIO pad names.
 
-### Generate Device DB
+## Generate Runtime Files
 
-`madmax generate-device-db --config configs/experiments/2in_2out.yaml`
+Generate the settings file:
 
-### Generate Experiment
+```bash
+uv run madmax generate-settings --config configs/experiments/2in_2out.yaml
+```
 
-`madmax generate-experiment --config configs/experiments/2in_2out.yaml`
+Generate the ARTIQ `device_db.py`:
 
-### Build Gateware
+```bash
+uv run madmax generate-device-db --config configs/experiments/2in_2out.yaml
+```
 
-`madmax build-gateware --config configs/experiments/2in_2out.yaml --dry-run`
+Generate a smoke-test experiment:
 
-## Example Experiments
+```bash
+uv run madmax generate-experiment --config configs/experiments/2in_2out.yaml
+```
 
-### 2in_2out Mode
+By default, generated files are written under `build/generated/`.
 
-A basic 2-input 2-output entangler configuration for testing.
+## Gateware Build Dry Run
 
-- Config: `configs/experiments/2in_2out.yaml`
-- Use: `madmax validate --config configs/experiments/2in_2out.yaml`
+The initial implementation only performs dry-run build planning:
 
-### Atom-Photon Mode
+```bash
+uv run madmax build-gateware --config configs/experiments/2in_2out.yaml --dry-run
+```
 
-A specialized mode for atom-photon entanglement experiments with single input/output.
+The command is controlled by `build.command_template` in the YAML config. This keeps the ARTIQ/Kasli-SoC build details explicit and editable while the surrounding tooling remains stable.
 
-- Config: `configs/experiments/atom_photon_mode.yaml`
-- Features: Optimized for low-latency photon detection and atom state measurement
-- Use: `madmax validate --config configs/experiments/atom_photon_mode.yaml`
+## Scripts
 
-## AI Pipeline
+- `scripts/setup.sh`: create/update the `uv` environment and print workspace status.
+- `scripts/init_submodules.sh`: run `git submodule update --init --recursive`.
+- `scripts/generate_runtime.sh`: validate and generate settings, `device_db.py`, and a smoke experiment.
+- `scripts/build_gateware.sh`: dry-run the gateware build command.
+- `scripts/smoke_test.sh`: run tests and a full generation dry run.
 
-The future AI pipeline will work as follows:
+## Future AI Pipeline
 
-1. User describes the desired experiment in natural language.
-2. AI modifies the high-level YAML config in `configs/experiments/`.
-3. AI validates the config.
-4. AI generates settings, device_db, and test experiments.
-5. AI builds gateware.
-6. AI suggests testing the generated experiment.
-7. Only then suggests flashing hardware.
+The intended flow is:
 
-The AI should avoid directly editing generated files and keep everything consistent.
+1. A user describes the desired experiment.
+2. The AI updates one high-level YAML config.
+3. Deterministic validators reject inconsistent hardware, gateware, or runtime requests.
+4. Generators write `settings.toml`, `device_db.py`, build descriptors, and smoke tests.
+5. The build wrapper invokes `madmax-artiq-zynq`.
+6. Tests run before any hardware flashing is suggested.
 
-## Repository Structure
+This keeps gateware, runtime configuration, and ARTIQ test experiments in sync without asking the AI to manually edit scattered files across multiple repositories.
 
-- `repos/` - Git submodules for the integrated repositories.
-- `configs/` - Experiment configurations, schemas, and templates.
-- `madmax_ai_gateware/` - Python package for the tooling.
-- `scripts/` - Shell scripts for automation.
-- `ai/` - AI-related documentation and examples.
-- `tests/` - Pytest tests.

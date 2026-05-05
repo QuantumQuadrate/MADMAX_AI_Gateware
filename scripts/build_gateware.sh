@@ -1,8 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Build gateware script
+CONFIG="${1:-configs/experiments/2in_2out.yaml}"
+uv run madmax build-gateware --config "$CONFIG" --dry-run
 
-# TODO: Implement actual build logic
-echo "Building gateware..."
-# cd repos/madmax-artiq-zynq
-# make build ...

@@ -1,36 +1,47 @@
-import pytest
-import pathlib
-import tempfile
-from madmax_ai_gateware.validate import load_config
-from madmax_ai_gateware.generate_settings import generate_settings
+from pathlib import Path
+
+from madmax_ai_gateware.build_gateware import render_build_command
+from madmax_ai_gateware.config import load_config
 from madmax_ai_gateware.generate_device_db import generate_device_db
-from madmax_ai_gateware.build_gateware import build_gateware
-from madmax_ai_gateware.paths import CONFIGS_DIR
+from madmax_ai_gateware.generate_experiment import generate_experiment
+from madmax_ai_gateware.generate_settings import generate_settings
+from madmax_ai_gateware.paths import DEFAULT_CONFIG
 
-def test_generate_settings():
-    config_path = CONFIGS_DIR / "experiments" / "2in_2out.yaml"
-    config = load_config(config_path)
-    with tempfile.TemporaryDirectory() as tmp:
-        output_path = pathlib.Path(tmp) / "settings.toml"
-        generate_settings(config, output_path)
-        assert output_path.exists()
-        content = output_path.read_text()
-        assert "num_inputs = 2" in content
-        assert "num_outputs = 2" in content
 
-def test_generate_device_db():
-    config_path = CONFIGS_DIR / "experiments" / "2in_2out.yaml"
-    config = load_config(config_path)
-    with tempfile.TemporaryDirectory() as tmp:
-        output_path = pathlib.Path(tmp) / "device_db.py"
-        generate_device_db(config, output_path)
-        assert output_path.exists()
-        content = output_path.read_text()
-        assert '"DIO0"' in content
-        assert '"DIO3"' in content
+def test_generated_settings_contains_counts(tmp_path: Path):
+    cfg = load_config(DEFAULT_CONFIG)
+    output = generate_settings(cfg, tmp_path / "settings.toml")
+    text = output.read_text(encoding="utf-8")
 
-def test_build_gateware_dry_run():
-    config_path = CONFIGS_DIR / "experiments" / "2in_2out.yaml"
-    config = load_config(config_path)
-    # Should not raise
-    build_gateware(config, dry_run=True)
+    assert "num_inputs = 2" in text
+    assert "num_outputs = 2" in text
+
+
+def test_generated_device_db_contains_rtio_device_names(tmp_path: Path):
+    cfg = load_config(DEFAULT_CONFIG)
+    output = generate_device_db(cfg, tmp_path / "device_db.py")
+    text = output.read_text(encoding="utf-8")
+
+    assert '"entangler_input0"' in text
+    assert '"entangler_input1"' in text
+    assert '"entangler_output0"' in text
+    assert '"entangler_output1"' in text
+
+
+def test_generated_experiment_contains_configured_devices(tmp_path: Path):
+    cfg = load_config(DEFAULT_CONFIG)
+    output = generate_experiment(cfg, tmp_path)
+    text = output.read_text(encoding="utf-8")
+
+    assert 'self.setattr_device("entangler_input0")' in text
+    assert 'self.setattr_device("entangler_output1")' in text
+    compile(text, str(output), "exec")
+
+
+def test_dry_run_build_command_generation():
+    cfg = load_config(DEFAULT_CONFIG)
+    command = render_build_command(cfg)
+
+    assert "madmax-artiq-zynq" in command
+    assert "kasli_soc.py" in command
+    assert "entangler_1dio_2in_2out.json" in command

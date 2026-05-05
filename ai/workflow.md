@@ -1,28 +1,14 @@
-# AI Workflow for MADMAX-AI-Gateware
+# AI Workflow
 
-## Overview
+The AI pipeline is intentionally narrow at the top and deterministic below it.
 
-The AI workflow integrates human intent with automated gateware development. The process ensures consistency and reproducibility.
+1. User request: describe the desired experiment in lab terms.
+2. Config edit: update one YAML file in `configs/experiments/`.
+3. Validation: run `madmax validate`.
+4. Generation: run the settings, device DB, and experiment generators.
+5. Test: run `pytest` and inspect generated smoke experiments.
+6. Build planning: run `madmax build-gateware --dry-run`.
+7. Build execution: only run the real ARTIQ/Kasli-SoC build after the command is reviewed.
 
-## Steps
+Generated files are disposable. The YAML config is the durable experiment intent.
 
-1. **Intent Capture**: User provides natural language description of desired experiment.
-
-2. **Config Modification**: AI updates the YAML config file based on the description.
-
-3. **Validation**: Run validation to ensure config is correct.
-
-4. **Generation**: Use scripts to generate settings, device_db, and test experiments.
-
-5. **Build**: Build gateware using the configured command.
-
-6. **Test**: Run generated test experiments.
-
-7. **Deploy**: Suggest flashing and running real experiments.
-
-## Best Practices
-
-- Always start with the example config and modify it.
-- Use dry-run for builds initially.
-- Keep a record of changes for reproducibility.
-- Test small changes incrementally.

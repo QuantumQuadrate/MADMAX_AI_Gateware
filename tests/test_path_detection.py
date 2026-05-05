@@ -1,13 +1,16 @@
-import pytest
-import pathlib
-from madmax_ai_gateware.paths import WORKSPACE_ROOT, REPOS_DIR, CONFIGS_DIR
+from madmax_ai_gateware.paths import WORKSPACE_ROOT, display_path, resolve_workspace_path
+from madmax_ai_gateware.submodules import SUBMODULES
 
-def test_workspace_paths():
-    assert WORKSPACE_ROOT.exists()
-    assert REPOS_DIR.exists()
-    assert CONFIGS_DIR.exists()
 
-def test_repo_paths():
-    repos = ["madmax-artiq-env", "madmax-artiq-zynq", "madmax-entangler-core"]
-    for repo in repos:
-        assert (REPOS_DIR / repo).exists()
+def test_workspace_relative_path_detection():
+    path = resolve_workspace_path("configs/experiments/2in_2out.yaml")
+
+    assert path == WORKSPACE_ROOT / "configs" / "experiments" / "2in_2out.yaml"
+    assert display_path(path) == "configs/experiments/2in_2out.yaml"
+
+
+def test_expected_submodule_paths_are_registered():
+    assert SUBMODULES["madmax-artiq-env"].as_posix() == "repos/madmax-artiq-env"
+    assert SUBMODULES["madmax-artiq-zynq"].as_posix() == "repos/madmax-artiq-zynq"
+    assert SUBMODULES["madmax-entangler-core"].as_posix() == "repos/madmax-entangler-core"
+

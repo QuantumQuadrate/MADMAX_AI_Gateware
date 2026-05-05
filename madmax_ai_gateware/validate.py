@@ -1,30 +1,42 @@
-import yaml
-import json
-import pathlib
-from .config import Config
-from .paths import CONFIGS_DIR
+from __future__ import annotations
 
-def load_config(config_path: pathlib.Path) -> Config:
-    with open(config_path, 'r') as f:
-        data = yaml.safe_load(f)
-    return Config(**data)
+from pathlib import Path
 
-def validate_config(config: Config) -> List[str]:
-    errors = []
-    if config.entangler.num_inputs != len(config.hardware.input_pads):
-        errors.append(f"num_inputs ({config.entangler.num_inputs}) does not match input_pads count ({len(config.hardware.input_pads)})")
-    if config.entangler.num_outputs != len(config.hardware.output_pads):
-        errors.append(f"num_outputs ({config.entangler.num_outputs}) does not match output_pads count ({len(config.hardware.output_pads)})")
-    # Add more validations as needed
+from pydantic import ValidationError
+
+from .config import ExperimentConfig, load_config
+
+
+def validate_config(cfg: ExperimentConfig, *, require_submodules: bool = False) -> list[str]:
+    errors: list[str] = []
+
+    for name, path in cfg.repositories.paths().items():
+        if require_submodules and not path.exists():
+            errors.append(f"{name} does not exist: {path}")
+
+    if cfg.target.board != "kasli_soc":
+        errors.append(f"unsupported target.board {cfg.target.board!r}; this workspace currently targets kasli_soc")
+
+    input_indices = [_pin_index(pin) for pin in cfg.hardware.input_pads]
+    output_indices = [_pin_index(pin) for pin in cfg.hardware.output_pads]
+    if input_indices and output_indices and max(input_indices) >= min(output_indices):
+        errors.append("expected DIO mapping with input pads before output pads")
+
     return errors
 
-def validate_with_schema(config_path: pathlib.Path) -> List[str]:
-    schema_path = CONFIGS_DIR / "schemas" / "experiment.schema.json"
-    with open(schema_path, 'r') as f:
-        schema = json.load(f)
-    # For now, just check if it loads
+
+def load_and_validate(path: str | Path, *, require_submodules: bool = False) -> tuple[ExperimentConfig | None, list[str]]:
     try:
-        config = load_config(config_path)
-        return validate_config(config)
-    except Exception as e:
-        return [str(e)]
+        cfg = load_config(path)
+    except ValidationError as exc:
+        return None, [str(exc)]
+    except Exception as exc:
+        return None, [f"failed to load config: {exc}"]
+
+    errors = validate_config(cfg, require_submodules=require_submodules)
+    return cfg, errors
+
+
+def _pin_index(pin: str) -> int:
+    return int(pin.removeprefix("dio"))
+

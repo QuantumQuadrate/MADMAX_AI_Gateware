@@ -1,17 +1,30 @@
-[entangler]
-mode = "{{ entangler.mode }}"
-num_inputs = {{ entangler.num_inputs }}
-num_outputs = {{ entangler.num_outputs }}
-coincidence_window_mu = {{ entangler.coincidence_window_mu }}
-timeout_mu = {{ entangler.timeout_mu }}
-fast_branch = {{ entangler.fast_branch }}
+# Generated from {{ source_config }}
+# Source of truth: experiment YAML.
+
+[experiment]
+name = "{{ cfg.experiment.name }}"
+description = "{{ cfg.experiment.description }}"
 
 [target]
-board = "{{ target.board }}"
-artiq_version = {{ target.artiq_version }}
-variant = "{{ target.variant }}"
+board = "{{ cfg.target.board }}"
+artiq_version = {{ cfg.target.artiq_version }}
+variant = "{{ cfg.target.variant }}"
+
+[repositories]
+artiq_env_path = "{{ cfg.repositories.artiq_env_path }}"
+entangler_core_path = "{{ cfg.repositories.entangler_core_path }}"
+artiq_zynq_path = "{{ cfg.repositories.artiq_zynq_path }}"
 
 [hardware]
-dio_eem = {{ hardware.dio_eem }}
-input_pads = {{ hardware.input_pads }}
-output_pads = {{ hardware.output_pads }}
+dio_eem = {{ cfg.hardware.dio_eem }}
+input_pads = [{% for pad in cfg.hardware.input_pads %}"{{ pad }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+output_pads = [{% for pad in cfg.hardware.output_pads %}"{{ pad }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+
+[entangler]
+num_inputs = {{ cfg.entangler.num_inputs }}
+num_outputs = {{ cfg.entangler.num_outputs }}
+coincidence_window_mu = {{ cfg.entangler.coincidence_window_mu }}
+timeout_mu = {{ cfg.entangler.timeout_mu }}
+fast_branch = {{ cfg.entangler.fast_branch | lower }}
+requested_goal = "{{ cfg.entangler.requested_goal }}"
+
