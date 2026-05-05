@@ -9,10 +9,14 @@ description = "{{ cfg.experiment.description }}"
 board = "{{ cfg.target.board }}"
 artiq_version = {{ cfg.target.artiq_version }}
 variant = "{{ cfg.target.variant }}"
+hw_rev = "{{ cfg.target.hw_rev }}"
+drtio_role = "{{ cfg.target.drtio_role }}"
+rtio_frequency = {{ cfg.target.rtio_frequency }}
 
 [repositories]
 artiq_env_path = "{{ cfg.repositories.artiq_env_path }}"
 entangler_core_path = "{{ cfg.repositories.entangler_core_path }}"
+entangler_core_branch = "{{ cfg.repositories.entangler_core_branch }}"
 artiq_zynq_path = "{{ cfg.repositories.artiq_zynq_path }}"
 
 [hardware]
@@ -23,8 +27,18 @@ output_pads = [{% for pad in cfg.hardware.output_pads %}"{{ pad }}"{% if not loo
 [entangler]
 num_inputs = {{ cfg.entangler.num_inputs }}
 num_outputs = {{ cfg.entangler.num_outputs }}
+num_generic_inputs = {{ cfg.entangler.num_generic_inputs }}
+num_patterns_allowed = {{ cfg.entangler.num_patterns_allowed }}
 coincidence_window_mu = {{ cfg.entangler.coincidence_window_mu }}
 timeout_mu = {{ cfg.entangler.timeout_mu }}
 fast_branch = {{ cfg.entangler.fast_branch | lower }}
 requested_goal = "{{ cfg.entangler.requested_goal }}"
+input_names = [{% for name in cfg.entangler.input_names %}"{{ name }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+output_names = [{% for name in cfg.entangler.output_names %}"{{ name }}"{% if not loop.last %}, {% endif %}{% endfor %}]
 
+{% for pattern in cfg.entangler.patterns %}
+[[entangler.patterns]]
+name = "{{ pattern.name }}"
+inputs = [{% for index in pattern.inputs %}{{ index }}{% if not loop.last %}, {% endif %}{% endfor %}]
+bitfield = {{ pattern_bitfield(pattern.inputs) }}
+{% endfor %}

@@ -13,6 +13,7 @@ def generate_settings(cfg: ExperimentConfig, output: str | Path | None = None) -
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     env = Environment(loader=FileSystemLoader(TEMPLATE_DIR), autoescape=False, keep_trailing_newline=True)
+    env.globals["pattern_bitfield"] = pattern_bitfield
     template = env.get_template("settings.toml.j2")
     rendered = template.render(cfg=cfg, source_config=_source_config(cfg))
     output_path.write_text(rendered, encoding="utf-8")
@@ -22,3 +23,9 @@ def generate_settings(cfg: ExperimentConfig, output: str | Path | None = None) -
 def _source_config(cfg: ExperimentConfig) -> str:
     return display_path(cfg.source_path) if cfg.source_path else "<in-memory>"
 
+
+def pattern_bitfield(inputs: list[int]) -> int:
+    value = 0
+    for index in inputs:
+        value |= 1 << index
+    return value

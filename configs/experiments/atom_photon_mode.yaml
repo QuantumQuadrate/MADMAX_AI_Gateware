@@ -6,10 +6,14 @@ target:
   board: kasli_soc
   artiq_version: 7
   variant: entangler_atom_photon
+  hw_rev: v1.0
+  drtio_role: standalone
+  rtio_frequency: 125000000.0
 
 repositories:
   artiq_env_path: repos/madmax-artiq-env
   entangler_core_path: repos/madmax-entangler-core
+  entangler_core_branch: feature/atom-photon-parity-gateware-redesign
   artiq_zynq_path: repos/madmax-artiq-zynq
 
 hardware:
@@ -24,13 +28,23 @@ hardware:
 entangler:
   num_inputs: 2
   num_outputs: 2
+  num_generic_inputs: 0
+  num_patterns_allowed: 2
   coincidence_window_mu: 250
   timeout_mu: 10000
   fast_branch: true
   requested_goal: atom-photon coincidence smoke mode
+  input_names:
+    - atom
+    - photon
+  output_names:
+    - accept
+    - reject
+  patterns:
+    - name: atom_and_photon
+      inputs: [0, 1]
 
 build:
   output_dir: build/generated
   dry_run: true
-  command_template: "cd {artiq_zynq_path} && nix develop --command python src/gateware/{board}.py -g {gateware_build_dir} {artiq_description_json}"
-
+  command_template: "cd {artiq_zynq_path} && nix develop --command bash -lc 'cd src && python gateware/{board}.py -g {gateware_build_dir} {artiq_description_json}'"

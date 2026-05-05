@@ -6,6 +6,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from . import artiq_description as ad
 from . import build_gateware as bg
 from . import generate_device_db as gdb
 from . import generate_experiment as ge
@@ -105,6 +106,17 @@ def generate_experiment_command(
     console.print(f"[green]Generated smoke experiment:[/green] {display_path(path)}")
 
 
+@app.command("generate-artiq-json")
+def generate_artiq_json_command(
+    config: Path = _config_option(),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output Kasli-SoC JSON description."),
+) -> None:
+    """Generate the Kasli-SoC JSON system description used by madmax-artiq-zynq."""
+    cfg = _load_valid_config(config)
+    path = ad.write_artiq_description(cfg, output)
+    console.print(f"[green]Generated ARTIQ JSON description:[/green] {display_path(path)}")
+
+
 @app.command("build-gateware")
 def build_gateware_command(
     config: Path = _config_option(),
@@ -115,10 +127,35 @@ def build_gateware_command(
     effective_dry_run = dry_run or cfg.build.dry_run
     if effective_dry_run:
         for line in bg.dry_run_lines(cfg):
-            console.print(line)
+            console.print(line, markup=False)
         return
 
     bg.build_gateware(cfg, dry_run=False)
+
+
+@app.command("gui")
+def gui_command(config: Path = _config_option()) -> None:
+    """Launch the Qt Kasli-SoC card mapping GUI."""
+    from .gui import launch_gui
+
+    try:
+        launch_gui(config)
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+
+@app.command("web-gui")
+def web_gui_command(
+    config: Path = _config_option(),
+    host: str = typer.Option("127.0.0.1", "--host", help="HTTP host."),
+    port: int = typer.Option(8765, "--port", help="HTTP port."),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="Open the browser automatically."),
+) -> None:
+    """Launch the browser-based card mapping GUI fallback."""
+    from .web_gui import run_web_gui
+
+    run_web_gui(config, host=host, port=port, open_browser=open_browser)
 
 
 def _load_valid_config(config: Path):
@@ -133,4 +170,3 @@ def _load_valid_config(config: Path):
 
 if __name__ == "__main__":
     app()
-

@@ -21,11 +21,22 @@ class Target(BaseModel):
     board: str = Field(min_length=1)
     artiq_version: int = Field(ge=1)
     variant: str = Field(min_length=1)
+    hw_rev: str = "v1.0"
+    drtio_role: str = "standalone"
+    rtio_frequency: float = 125e6
+
+    @field_validator("drtio_role")
+    @classmethod
+    def validate_drtio_role(cls, role: str) -> str:
+        if role not in {"standalone", "master", "satellite"}:
+            raise ValueError("drtio_role must be standalone, master, or satellite")
+        return role
 
 
 class Repositories(BaseModel):
     artiq_env_path: str = "repos/madmax-artiq-env"
     entangler_core_path: str = "repos/madmax-entangler-core"
+    entangler_core_branch: str = "artiq-integration"
     artiq_zynq_path: str = "repos/madmax-artiq-zynq"
 
     def paths(self) -> dict[str, Path]:
@@ -63,10 +74,30 @@ class Hardware(BaseModel):
 class Entangler(BaseModel):
     num_inputs: int = Field(ge=1)
     num_outputs: int = Field(ge=1)
+    num_generic_inputs: int = Field(default=0, ge=0)
+    num_patterns_allowed: int = Field(default=2, ge=1, le=16)
     coincidence_window_mu: int = Field(ge=1)
     timeout_mu: int = Field(ge=1)
     fast_branch: bool = True
     requested_goal: str = "low-latency branch decision"
+    input_names: list[str] = Field(default_factory=list)
+    output_names: list[str] = Field(default_factory=list)
+    patterns: list["EntanglerPattern"] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_logic(self) -> "Entangler":
+        for pattern in self.patterns:
+            invalid = [index for index in pattern.inputs if index < 0 or index >= self.num_inputs]
+            if invalid:
+                raise ValueError(f"pattern {pattern.name!r} references invalid input indices: {invalid}")
+        if len(self.patterns) > self.num_patterns_allowed:
+            raise ValueError("number of entangler patterns exceeds num_patterns_allowed")
+        return self
+
+
+class EntanglerPattern(BaseModel):
+    name: str = Field(min_length=1)
+    inputs: list[int] = Field(default_factory=list)
 
 
 class Build(BaseModel):
@@ -112,4 +143,3 @@ def load_config(path: str | Path) -> ExperimentConfig:
     cfg = ExperimentConfig.model_validate(data)
     cfg.source_path = config_path
     return cfg
-

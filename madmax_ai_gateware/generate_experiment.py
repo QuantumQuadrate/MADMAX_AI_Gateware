@@ -33,6 +33,8 @@ def _render_experiment(cfg: ExperimentConfig) -> str:
         for name in output_devices
     )
     input_comment = ", ".join(input_devices)
+    patterns = [_pattern_bitfield(pattern.inputs) for pattern in cfg.entangler.patterns]
+    pattern_comment = ", ".join(f"{pattern.name}=0b{_pattern_bitfield(pattern.inputs):0{cfg.entangler.num_inputs}b}" for pattern in cfg.entangler.patterns)
 
     return f'''# Generated smoke test for {cfg.experiment.name}.
 # Source of truth: experiment YAML.
@@ -48,9 +50,18 @@ class {class_name}(EnvExperiment):
     def run(self):
         self.core.reset()
         # Input devices configured for basic presence checks: {input_comment}
+        # Entangler pattern logic: {pattern_comment or "no patterns configured"}
+        self.entangler.set_patterns({patterns})
 {pulse_lines or "        pass"}
 '''
 
 
 def _safe_name(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_]+", "_", name).strip("_").lower() or "generated"
+
+
+def _pattern_bitfield(inputs: list[int]) -> int:
+    value = 0
+    for index in inputs:
+        value |= 1 << index
+    return value

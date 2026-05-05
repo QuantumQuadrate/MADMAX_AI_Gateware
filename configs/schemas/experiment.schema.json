@@ -18,7 +18,10 @@
       "properties": {
         "board": {"type": "string"},
         "artiq_version": {"type": "integer", "minimum": 1},
-        "variant": {"type": "string"}
+        "variant": {"type": "string"},
+        "hw_rev": {"type": "string"},
+        "drtio_role": {"type": "string", "enum": ["standalone", "master", "satellite"]},
+        "rtio_frequency": {"type": "number", "minimum": 1}
       }
     },
     "repositories": {
@@ -27,6 +30,7 @@
       "properties": {
         "artiq_env_path": {"type": "string"},
         "entangler_core_path": {"type": "string"},
+        "entangler_core_branch": {"type": "string"},
         "artiq_zynq_path": {"type": "string"}
       }
     },
@@ -45,10 +49,25 @@
       "properties": {
         "num_inputs": {"type": "integer", "minimum": 1},
         "num_outputs": {"type": "integer", "minimum": 1},
+        "num_generic_inputs": {"type": "integer", "minimum": 0},
+        "num_patterns_allowed": {"type": "integer", "minimum": 1},
         "coincidence_window_mu": {"type": "integer", "minimum": 1},
         "timeout_mu": {"type": "integer", "minimum": 1},
         "fast_branch": {"type": "boolean"},
-        "requested_goal": {"type": "string"}
+        "requested_goal": {"type": "string"},
+        "input_names": {"type": "array", "items": {"type": "string"}},
+        "output_names": {"type": "array", "items": {"type": "string"}},
+        "patterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "inputs"],
+            "properties": {
+              "name": {"type": "string"},
+              "inputs": {"type": "array", "items": {"type": "integer", "minimum": 0}}
+            }
+          }
+        }
       }
     },
     "build": {
@@ -62,4 +81,3 @@
     }
   }
 }
-
