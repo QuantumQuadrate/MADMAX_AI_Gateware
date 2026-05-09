@@ -84,3 +84,14 @@ def test_generated_settings_contains_entangler_logic(tmp_path: Path):
 
     assert "num_patterns_allowed = 2" in text
     assert "bitfield = 3" in text
+
+
+def test_generated_atom_photon_parity_experiment_uses_parity_driver_api(tmp_path: Path):
+    cfg = load_config(Path("configs/experiments/atom_photon_parity_6.yaml"))
+    output = generate_experiment(cfg, tmp_path)
+    text = output.read_text(encoding="utf-8")
+
+    assert "set_num_attempts" in text
+    assert "set_branch_done_delay_mu" in text
+    assert "set_patterns" not in text
+    compile(text, str(output), "exec")

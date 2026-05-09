@@ -12,6 +12,12 @@ This workspace orchestrates:
 - `repos/madmax-artiq-zynq`: Kasli-SoC and ARTIQ Zynq gateware build flow.
 - `repos/madmax-entangler-core`: custom Migen/Entangler logic.
 
+## Documentation
+
+- [Atom-photon parity 6 gateware helper](docs/atom_photon_parity_6_gateware.md):
+  documents the current parity-6 helper contract, registers, timing model, and
+  hardware test ladder.
+
 ## Setup
 
 Install `uv`, then create the local environment:
