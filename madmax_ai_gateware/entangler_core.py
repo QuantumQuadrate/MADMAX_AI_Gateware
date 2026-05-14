@@ -53,6 +53,10 @@ def checkout_entangler_branch(branch: str) -> str:
     if not branch:
         raise ValueError("Entangler branch cannot be empty")
 
+    current = current_entangler_branch()
+    if branch == current:
+        return current
+
     status = subprocess.run(
         ["git", "status", "--short"],
         cwd=ENTANGLER_CORE_PATH,
@@ -61,7 +65,11 @@ def checkout_entangler_branch(branch: str) -> str:
         text=True,
     )
     if status.stdout.strip():
-        raise RuntimeError("madmax-entangler-core has uncommitted changes; refusing to switch branches")
+        raise RuntimeError(
+            "madmax-entangler-core has uncommitted changes on "
+            f"{current!r}; refusing to switch to {branch!r}. "
+            "Select the current checkout in the mapper, or commit/stash the entangler-core changes first."
+        )
 
     local = subprocess.run(
         ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
@@ -82,4 +90,3 @@ def checkout_entangler_branch(branch: str) -> str:
 
 def entangler_override_args() -> list[str]:
     return ["--override-input", "entangler-core", f"path:{ENTANGLER_CORE_PATH}"]
-

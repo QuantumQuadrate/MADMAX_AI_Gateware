@@ -16,6 +16,15 @@ device_db = {
     },
     "entangler": {
         "type": "local",
+{% if cfg.target.variant == "and_nand_test" or cfg.experiment.name == "and_nand_test" %}
+        "module": "entangler.and_nand_test_driver",
+        "class": "AndNandTestEntangler",
+        "arguments": {"channel": 0},
+{% elif cfg.repositories.entangler_core_branch == "feature/atom-photon-parity" or cfg.repositories.entangler_core_branch == "feature/atom-photon-parity-gateware-redesign" %}
+        "module": "entangler.atom_photon_parity_driver",
+        "class": "AtomPhotonParityEntangler",
+        "arguments": {"channel": 0},
+{% else %}
         "module": "entangler.driver",
         "class": "Entangler",
         "arguments": {
@@ -25,6 +34,7 @@ device_db = {
             "timeout_mu": {{ cfg.entangler.timeout_mu }},
             "fast_branch": {{ cfg.entangler.fast_branch }},
         },
+{% endif %}
     },
 {% for pad in cfg.hardware.input_pads %}
     "entangler_input{{ loop.index0 }}": {
@@ -43,4 +53,3 @@ device_db = {
     },
 {% endfor %}
 }
-

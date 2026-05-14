@@ -53,7 +53,7 @@ def render_build_steps(cfg: ExperimentConfig) -> list[str]:
             f"cd {shlex.quote(str(zynq / 'build'))} && "
             "printf '%s\\n' 'the_ROM_image:' '{' '  [bootloader]result/szl.elf' "
             f"'  gateware/top.bit' '  firmware/armv7-none-eabihf/release/{firmware}' "
-            "'}' > boot.bif && nix develop .. --command mkbootimage boot.bif boot.bin"
+            f"'}}' > boot.bif && nix develop {override} .. --command mkbootimage boot.bif boot.bin"
         ),
         f"cd {shlex.quote(str(zynq))} && nix develop {override} --command bash -lc {device_db_script}",
     ]

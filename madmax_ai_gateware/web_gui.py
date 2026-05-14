@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 from .artiq_description import (
     CARD_DEFINITIONS,
+    card_default_options,
     default_entangler_peripherals,
     make_description,
     validate_peripherals,
@@ -21,6 +22,14 @@ from .artiq_description import (
 )
 from .build_gateware import firmware_name, render_build_steps
 from .config import ExperimentConfig, load_config
+from .custom_logic import (
+    custom_logic_state,
+    run_command_stream,
+    scaffold_custom_logic,
+    update_flake_input,
+    verification_commands,
+    write_custom_logic_request,
+)
 from .entangler_core import checkout_entangler_branch, current_entangler_branch, list_entangler_branches
 from .entangler_settings import write_entangler_settings
 from .paths import DEFAULT_CONFIG, WORKSPACE_ROOT, display_path
@@ -28,6 +37,14 @@ from .paths import DEFAULT_CONFIG, WORKSPACE_ROOT, display_path
 
 _BUILD_LOCK = threading.Lock()
 _BUILD_JOB: dict[str, Any] = {
+    "running": False,
+    "status": "idle",
+    "log": "",
+    "returncode": None,
+}
+
+_CUSTOM_LOCK = threading.Lock()
+_CUSTOM_JOB: dict[str, Any] = {
     "running": False,
     "status": "idle",
     "log": "",
@@ -69,6 +86,10 @@ class WebGuiHandler(BaseHTTPRequestHandler):
             self._send_json({"lines": render_build_steps(self.config)})
         elif parsed.path == "/api/build-status":
             self._send_json(_job_snapshot())
+        elif parsed.path == "/api/custom-logic/state":
+            self._send_json(custom_logic_state())
+        elif parsed.path == "/api/custom-logic/job-status":
+            self._send_json(_custom_job_snapshot())
         elif parsed.path == "/api/entangler-branches":
             self._send_json(
                 {
@@ -136,6 +157,28 @@ class WebGuiHandler(BaseHTTPRequestHandler):
                 started = _start_build_job(cfg, path, settings_path)
                 status = HTTPStatus.OK if started["ok"] else HTTPStatus.CONFLICT
                 self._send_json(started, status=status)
+            elif parsed.path == "/api/custom-logic/request":
+                body = self._read_json()
+                self._send_json(write_custom_logic_request(body))
+            elif parsed.path == "/api/custom-logic/scaffold":
+                body = self._read_json()
+                self._send_json(scaffold_custom_logic(body))
+            elif parsed.path == "/api/custom-logic/update-flake":
+                body = self._read_json()
+                self._send_json(update_flake_input(body.get("flake_mode", "local_path"), body.get("branch", "")))
+            elif parsed.path == "/api/custom-logic/run-checks":
+                body = self._read_json()
+                started = _start_custom_checks(
+                    body.get("logic_name", ""),
+                    include_nix=bool(body.get("include_nix", False)),
+                )
+                status = HTTPStatus.OK if started["ok"] else HTTPStatus.CONFLICT
+                self._send_json(started, status=status)
+            elif parsed.path == "/api/custom-logic/run-codex":
+                body = self._read_json()
+                started = _start_codex_task(body)
+                status = HTTPStatus.OK if started["ok"] else HTTPStatus.CONFLICT
+                self._send_json(started, status=status)
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
         except Exception as exc:
@@ -154,7 +197,7 @@ class WebGuiHandler(BaseHTTPRequestHandler):
                     "label": definition.label,
                     "port_count": definition.port_count,
                     "min_ports": definition.min_ports,
-                    "default_options": definition.default_options,
+                    "default_options": card_default_options(definition.type, self.config),
                     "requires_drtio": definition.requires_drtio,
                 }
                 for definition in CARD_DEFINITIONS.values()
@@ -307,6 +350,126 @@ def _run_build_steps(cfg: ExperimentConfig) -> None:
         _set_job(running=False, status="failed", returncode=1, finished_at=time.strftime("%Y-%m-%d %H:%M:%S"))
 
 
+def _custom_job_snapshot() -> dict[str, Any]:
+    with _CUSTOM_LOCK:
+        return dict(_CUSTOM_JOB)
+
+
+def _set_custom_job(**updates: Any) -> None:
+    with _CUSTOM_LOCK:
+        _CUSTOM_JOB.update(updates)
+
+
+def _append_custom_log(text: str) -> None:
+    with _CUSTOM_LOCK:
+        _CUSTOM_JOB["log"] += text
+
+
+def _start_custom_checks(logic_name: str, *, include_nix: bool = False) -> dict[str, Any]:
+    commands = verification_commands(logic_name, include_nix=include_nix)
+    with _CUSTOM_LOCK:
+        if _CUSTOM_JOB.get("running"):
+            return {"ok": False, "errors": ["Custom-logic checks are already running."]}
+        _CUSTOM_JOB.update(
+            {
+                "running": True,
+                "status": "running",
+                "log": "Starting custom-logic verification.\n",
+                "returncode": None,
+                "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "finished_at": None,
+            }
+        )
+    thread = threading.Thread(target=_run_custom_check_steps, args=(commands,), daemon=True)
+    thread.start()
+    return {"ok": True, "message": "Verification started.", "commands": commands}
+
+
+def _start_codex_task(spec: dict[str, Any]) -> dict[str, Any]:
+    request = write_custom_logic_request(spec)
+    prompt = request["prompt"]
+    with _CUSTOM_LOCK:
+        if _CUSTOM_JOB.get("running"):
+            return {"ok": False, "errors": ["A custom-logic job is already running."]}
+        _CUSTOM_JOB.update(
+            {
+                "running": True,
+                "status": "running-codex",
+                "log": f"Wrote {request['path']}\nStarting Codex for {request['branch']}.\n",
+                "returncode": None,
+                "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "finished_at": None,
+            }
+        )
+    thread = threading.Thread(target=_run_codex_task, args=(prompt,), daemon=True)
+    thread.start()
+    return {"ok": True, "message": "Codex started.", "request_path": request["path"], "prompt": prompt}
+
+
+def _run_codex_task(prompt: str) -> None:
+    try:
+        process = subprocess.Popen(
+            [
+                "codex",
+                "exec",
+                "--cd",
+                str(WORKSPACE_ROOT),
+                "--sandbox",
+                "danger-full-access",
+                "--dangerously-bypass-approvals-and-sandbox",
+                prompt,
+            ],
+            cwd=WORKSPACE_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert process.stdout is not None
+        for line in process.stdout:
+            _append_custom_log(line)
+        returncode = process.wait()
+        status = "complete" if returncode == 0 else "failed"
+        _append_custom_log(f"\nCodex finished with exit code {returncode}.\n")
+        _set_custom_job(
+            running=False,
+            status=status,
+            returncode=returncode,
+            finished_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+    except FileNotFoundError:
+        _append_custom_log("\nCodex CLI was not found on PATH.\n")
+        _set_custom_job(running=False, status="failed", returncode=127, finished_at=time.strftime("%Y-%m-%d %H:%M:%S"))
+    except Exception as exc:
+        _append_custom_log(f"\nCodex failed before completion: {exc}\n")
+        _set_custom_job(running=False, status="failed", returncode=1, finished_at=time.strftime("%Y-%m-%d %H:%M:%S"))
+
+
+def _run_custom_check_steps(commands: list[str]) -> None:
+    try:
+        for index, command in enumerate(commands, start=1):
+            _append_custom_log(f"\n[{index}] {command}\n")
+            process = run_command_stream(command)
+            assert process.stdout is not None
+            for line in process.stdout:
+                _append_custom_log(line)
+            returncode = process.wait()
+            if returncode != 0:
+                _append_custom_log(f"\nCommand failed with exit code {returncode}.\n")
+                _set_custom_job(
+                    running=False,
+                    status="failed",
+                    returncode=returncode,
+                    finished_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+                )
+                return
+        _append_custom_log("\nCustom-logic verification complete.\n")
+        _set_custom_job(running=False, status="complete", returncode=0, finished_at=time.strftime("%Y-%m-%d %H:%M:%S"))
+    except Exception as exc:
+        _append_custom_log(f"\nVerification failed before completion: {exc}\n")
+        _set_custom_job(running=False, status="failed", returncode=1, finished_at=time.strftime("%Y-%m-%d %H:%M:%S"))
+
+
 HTML = r"""<!doctype html>
 <html lang="en">
 <head>
@@ -341,12 +504,31 @@ HTML = r"""<!doctype html>
       background: #ffffff;
     }
     h1 { margin: 0; font-size: 18px; font-weight: 700; }
+    .titlebar {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      min-width: 0;
+    }
+    .view-tabs {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .view-tabs button {
+      padding: 6px 9px;
+      font-size: 13px;
+    }
     main {
       display: grid;
       grid-template-columns: minmax(520px, 1.1fr) minmax(420px, 0.9fr);
       gap: 16px;
       padding: 16px;
       height: calc(100vh - 58px);
+    }
+    main[hidden] { display: none; }
+    main.custom-workflow {
+      grid-template-columns: minmax(520px, 0.95fr) minmax(460px, 1.05fr);
     }
     section {
       min-width: 0;
@@ -379,6 +561,8 @@ HTML = r"""<!doctype html>
       gap: 10px;
       margin-bottom: 14px;
     }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     label { display: grid; gap: 5px; font-size: 12px; color: var(--muted); }
     input, select, textarea, button { font: inherit; }
     input, select, textarea {
@@ -408,6 +592,14 @@ HTML = r"""<!doctype html>
     th:nth-child(3), td:nth-child(3) { width: 46%; }
     th:nth-child(4), td:nth-child(4) { width: 8%; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .check-row input { width: auto; }
     button {
       border: 1px solid var(--line);
       border-radius: 6px;
@@ -436,6 +628,28 @@ HTML = r"""<!doctype html>
       color: var(--muted);
       font-size: 12px;
     }
+    .state-list {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .hint {
+      margin: 8px 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .state-line {
+      display: grid;
+      grid-template-columns: 140px minmax(0, 1fr);
+      gap: 10px;
+      font-size: 12px;
+    }
+    .state-line strong { color: var(--muted); font-weight: 650; }
+    .state-line span {
+      overflow-wrap: anywhere;
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+    }
     .errors {
       color: var(--warn);
       padding: 8px 14px;
@@ -450,10 +664,16 @@ HTML = r"""<!doctype html>
 </head>
 <body>
   <header>
-    <h1>MADMAX Kasli-SoC Gateware Mapper</h1>
+    <div class="titlebar">
+      <h1>MADMAX Kasli-SoC Gateware Mapper</h1>
+      <div class="view-tabs">
+        <button id="tab-mapper" class="active">Card Mapper</button>
+        <button id="tab-custom">Custom Logic</button>
+      </div>
+    </div>
     <span id="source"></span>
   </header>
-  <main>
+  <main id="mapper-main">
     <section>
       <div class="section-head">
         <h2>Kasli-SoC Configuration</h2>
@@ -490,6 +710,7 @@ HTML = r"""<!doctype html>
         <div class="section-head inline-head">
           <h2>Entangler Core Source</h2>
           <div class="actions">
+            <button id="refresh-branches">Refresh Branches</button>
             <button id="checkout-branch">Use Branch</button>
           </div>
         </div>
@@ -505,6 +726,7 @@ HTML = r"""<!doctype html>
             <button id="save" class="primary">Write JSON</button>
           </div>
         </div>
+        <p class="hint">An Entangler row owns the DIO EEM port(s) listed in that row. Do not add a separate DIO row for the same EEM port.</p>
         <table>
           <thead>
             <tr><th>Card</th><th>EEM Port(s)</th><th>Options JSON</th><th></th></tr>
@@ -529,6 +751,79 @@ HTML = r"""<!doctype html>
       <div class="status" id="status"></div>
     </section>
   </main>
+  <main id="custom-main" class="custom-workflow" hidden>
+    <section>
+      <div class="section-head">
+        <h2>Custom Logic Request</h2>
+        <div class="actions">
+          <button id="custom-refresh">Refresh</button>
+          <button id="custom-write-request">Write Codex Task</button>
+          <button id="custom-run-codex" class="primary">Run Codex</button>
+          <button id="custom-copy">Copy Prompt</button>
+        </div>
+      </div>
+      <div class="content">
+        <div class="grid three">
+          <label>Logic Name <input id="custom_logic_name" placeholder="atom photon parity v2"></label>
+          <label>Base Branch <select id="custom_base_branch"></select></label>
+          <label>Flake Mode
+            <select id="custom_flake_mode">
+              <option value="local_path">local_path</option>
+              <option value="remote_branch">remote_branch</option>
+              <option value="none">none</option>
+            </select>
+          </label>
+          <label>Entangler Inputs <input id="custom_num_inputs" type="number" min="1" max="8" value="2"></label>
+          <label>Outputs <input id="custom_num_outputs" type="number" min="1" max="8" value="2"></label>
+          <label>Target Branch <input id="custom_branch" placeholder="feature/logic-name"></label>
+        </div>
+        <label>Description <textarea id="custom_description" placeholder="Experiment goal and hardware context"></textarea></label>
+        <label>Required Behavior <textarea id="custom_required_behavior" placeholder="Timing-critical behavior Codex should implement"></textarea></label>
+        <div class="grid two">
+          <label>Inputs <textarea id="custom_inputs" placeholder="SPCM0, SPCM1, reference TTL, ..."></textarea></label>
+          <label>Outputs <textarea id="custom_outputs" placeholder="FORT gate, excitation, microwave switch, ..."></textarea></label>
+        </div>
+        <label>Success / Failure Rules <textarea id="custom_success_failure" placeholder="Success outcomes, retry policy, timeout/failure reasons"></textarea></label>
+        <label>Test Experiments <textarea id="custom_test_behavior" placeholder="Smoke, loopback, timing scan, stress, benchmark expectations"></textarea></label>
+        <div class="section-head inline-head">
+          <h2>Scaffold Options</h2>
+          <div class="actions">
+            <button id="custom-scaffold" class="primary">Scaffold Workflow</button>
+            <button id="custom-wire-flake">Wire Flake</button>
+          </div>
+        </div>
+        <div class="grid three">
+          <label class="check-row"><input id="custom_create_branch" type="checkbox" checked> create branch</label>
+          <label class="check-row"><input id="custom_scaffold_core" type="checkbox" checked> core files</label>
+          <label class="check-row"><input id="custom_scaffold_env" type="checkbox" checked> ARTIQ env</label>
+          <label class="check-row"><input id="custom_scaffold_config" type="checkbox" checked> experiment YAML</label>
+          <label class="check-row"><input id="custom_include_nix" type="checkbox"> include Nix checks</label>
+        </div>
+      </div>
+      <div class="status" id="custom-status"></div>
+    </section>
+    <section>
+      <div class="section-head">
+        <h2>Workflow State</h2>
+        <div class="actions">
+          <button id="custom-run-checks" class="primary">Run Checks</button>
+          <button id="custom-show-prompt">Prompt</button>
+          <button id="custom-show-log" class="active">Log</button>
+          <button id="custom-show-state">State</button>
+        </div>
+      </div>
+      <div class="content">
+        <div class="state-list">
+          <div class="state-line"><strong>Entangler branch</strong><span id="custom_state_branch"></span></div>
+          <div class="state-line"><strong>Zynq flake input</strong><span id="custom_state_flake"></span></div>
+          <div class="state-line"><strong>ARTIQ envs</strong><span id="custom_state_envs"></span></div>
+          <div class="state-line"><strong>Codex runner</strong><span id="custom_state_codex"></span></div>
+        </div>
+      </div>
+      <div class="output content"><pre id="custom-output"></pre></div>
+      <div class="status" id="custom-log-status"></div>
+    </section>
+  </main>
   <script>
     let state = null;
     let cards = [];
@@ -539,13 +834,50 @@ HTML = r"""<!doctype html>
     let latestBuildPlan = [];
     let latestBuildLog = "";
     let pollTimer = null;
+    let customState = null;
+    let latestCustomPrompt = "";
+    let latestCustomLog = "";
+    let customOutputMode = "log";
+    let customPollTimer = null;
     const $ = (id) => document.getElementById(id);
 
     async function api(path, options = {}) {
       const response = await fetch(path, {headers: {"Content-Type": "application/json"}, ...options});
-      const data = await response.json();
+      const text = await response.text();
+      let data = {};
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch (error) {
+          data = {errors: [text]};
+        }
+      }
       if (!response.ok) throw data;
       return data;
+    }
+
+    function errorMessages(error) {
+      if (error && Array.isArray(error.errors)) return error.errors;
+      if (error && error.message) return [error.message];
+      if (typeof error === "string") return [error];
+      return [JSON.stringify(error)];
+    }
+
+    function showMapperError(prefix, error) {
+      const messages = errorMessages(error);
+      $("errors").hidden = false;
+      $("errors").textContent = messages.map((message) => `- ${message}`).join("\n");
+      latestBuildLog = `${prefix}\n${messages.join("\n")}`;
+      setOutputMode("log");
+      setStatus(prefix);
+    }
+
+    function showCustomError(prefix, error) {
+      const messages = errorMessages(error);
+      latestCustomLog = `${prefix}\n${messages.join("\n")}`;
+      setCustomOutputMode("log");
+      setCustomStatus(prefix);
+      setCustomLogStatus(prefix);
     }
 
     function target() {
@@ -709,6 +1041,58 @@ HTML = r"""<!doctype html>
       }
     }
 
+    function logicModeForBranch(branch) {
+      let branchName = (branch || "").trim();
+      if (branchName.startsWith("origin/")) branchName = branchName.slice("origin/".length);
+      if (["", "master", "main", "artiq-integration"].includes(branchName)) return "legacy";
+      if (branchName.startsWith("feature/")) branchName = branchName.slice("feature/".length);
+      return branchName.replace(/[-/]+/g, "_");
+    }
+
+    function defaultOptionsForCard(cardType) {
+      const definition = cards.find((item) => item.type === cardType);
+      const defaults = definition ? {...definition.default_options} : {};
+      if (cardType === "entangler") {
+        delete defaults.logic_mode;
+        const logicMode = logicModeForBranch($("entangler_core_branch").value);
+        if (logicMode !== "legacy") defaults.logic_mode = logicMode;
+      }
+      return defaults;
+    }
+
+    function parseOptions(text) {
+      if (!text.trim()) return {};
+      try {
+        return JSON.parse(text);
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function applyEntanglerBranchDefaultsToRows() {
+      const defaults = defaultOptionsForCard("entangler");
+      for (const row of $("rows").querySelectorAll("tr")) {
+        const select = row.querySelector("[data-card]");
+        const options = row.querySelector("[data-options]");
+        if (!select || !options || select.value !== "entangler") continue;
+        const current = parseOptions(options.value);
+        if (current === null) continue;
+        const next = {...current, ...defaults};
+        if (!Object.prototype.hasOwnProperty.call(defaults, "logic_mode")) {
+          delete next.logic_mode;
+        }
+        options.value = JSON.stringify(next, null, 2);
+      }
+    }
+
+    function defaultEntanglerPeripheral() {
+      return {
+        type: "entangler",
+        ports: [state.config.hardware.dio_eem],
+        ...defaultOptionsForCard("entangler")
+      };
+    }
+
     function cardSelect(value) {
       const select = document.createElement("select");
       select.dataset.card = "true";
@@ -754,9 +1138,9 @@ HTML = r"""<!doctype html>
         } else {
           const existing = ports.value.trim() ? Number(ports.value.split(",")[0].trim()) : 0;
           const startPort = Number.isInteger(existing) ? existing : 0;
-          ports.value = Array.from({length: def.port_count}, (_, index) => startPort + index).join(",");
+            ports.value = Array.from({length: def.port_count}, (_, index) => startPort + index).join(",");
         }
-        options.value = JSON.stringify(def.default_options, null, 2);
+        options.value = JSON.stringify(defaultOptionsForCard(def.type), null, 2);
         scheduleRefresh();
       }
 
@@ -818,61 +1202,73 @@ HTML = r"""<!doctype html>
     }
 
     async function saveJson() {
-      const rowState = collectRows();
-      const patternState = collectPatterns();
-      if (rowState.errors.length || patternState.errors.length) {
-        $("errors").hidden = false;
-        $("errors").textContent = [...rowState.errors, ...patternState.errors].map((error) => `- ${error}`).join("\n");
-        setStatus("Fix row errors before writing JSON.");
-        return;
+      try {
+        const rowState = collectRows();
+        const patternState = collectPatterns();
+        if (rowState.errors.length || patternState.errors.length) {
+          $("errors").hidden = false;
+          $("errors").textContent = [...rowState.errors, ...patternState.errors].map((error) => `- ${error}`).join("\n");
+          setStatus("Fix row errors before writing JSON.");
+          return;
+        }
+        const data = await api("/api/save-json", {
+          method: "POST",
+          body: JSON.stringify({target: target(), repositories: repositories(), entangler: entanglerLogic(), peripherals: rowState.peripherals})
+        });
+        setStatus(`Wrote ${data.path} and ${data.settings_path}`);
+      } catch (error) {
+        showMapperError("Write JSON failed.", error);
       }
-      const data = await api("/api/save-json", {
-        method: "POST",
-        body: JSON.stringify({target: target(), repositories: repositories(), entangler: entanglerLogic(), peripherals: rowState.peripherals})
-      });
-      setStatus(`Wrote ${data.path} and ${data.settings_path}`);
     }
 
     async function copyCommand() {
-      const rowState = collectRows();
-      const patternState = collectPatterns();
-      if (rowState.errors.length || patternState.errors.length) {
-        $("errors").hidden = false;
-        $("errors").textContent = [...rowState.errors, ...patternState.errors].map((error) => `- ${error}`).join("\n");
-        setStatus("Fix row errors before copying the command.");
-        return;
-      }
-      const data = await api("/api/copy-command", {
-        method: "POST",
-        body: JSON.stringify({target: target(), repositories: repositories(), entangler: entanglerLogic(), peripherals: rowState.peripherals})
-      });
-      latestBuildLog = data.command;
-      setOutputMode("log");
       try {
-        await navigator.clipboard.writeText(data.command);
-        setStatus(`Copied command. Wrote ${data.path} and ${data.settings_path}`);
+        const rowState = collectRows();
+        const patternState = collectPatterns();
+        if (rowState.errors.length || patternState.errors.length) {
+          $("errors").hidden = false;
+          $("errors").textContent = [...rowState.errors, ...patternState.errors].map((error) => `- ${error}`).join("\n");
+          setStatus("Fix row errors before copying the command.");
+          return;
+        }
+        const data = await api("/api/copy-command", {
+          method: "POST",
+          body: JSON.stringify({target: target(), repositories: repositories(), entangler: entanglerLogic(), peripherals: rowState.peripherals})
+        });
+        latestBuildLog = data.command;
+        setOutputMode("log");
+        try {
+          await navigator.clipboard.writeText(data.command);
+          setStatus(`Copied command. Wrote ${data.path} and ${data.settings_path}`);
+        } catch (error) {
+          setStatus(`Command is shown above. Wrote ${data.path} and ${data.settings_path}`);
+        }
       } catch (error) {
-        setStatus(`Command is shown above. Wrote ${data.path} and ${data.settings_path}`);
+        showMapperError("Copy command failed.", error);
       }
     }
 
     async function runBuild() {
-      const rowState = collectRows();
-      const patternState = collectPatterns();
-      if (rowState.errors.length || patternState.errors.length) {
-        $("errors").hidden = false;
-        $("errors").textContent = [...rowState.errors, ...patternState.errors].map((error) => `- ${error}`).join("\n");
-        setStatus("Fix row errors before running the build.");
-        return;
+      try {
+        const rowState = collectRows();
+        const patternState = collectPatterns();
+        if (rowState.errors.length || patternState.errors.length) {
+          $("errors").hidden = false;
+          $("errors").textContent = [...rowState.errors, ...patternState.errors].map((error) => `- ${error}`).join("\n");
+          setStatus("Fix row errors before running the build.");
+          return;
+        }
+        const data = await api("/api/run-build", {
+          method: "POST",
+          body: JSON.stringify({target: target(), repositories: repositories(), entangler: entanglerLogic(), peripherals: rowState.peripherals})
+        });
+        latestBuildLog = data.message || "Build started.";
+        setOutputMode("log");
+        setStatus(`${data.message} Wrote ${data.path}`);
+        startPollingBuild();
+      } catch (error) {
+        showMapperError("Run build failed.", error);
       }
-      const data = await api("/api/run-build", {
-        method: "POST",
-        body: JSON.stringify({target: target(), repositories: repositories(), entangler: entanglerLogic(), peripherals: rowState.peripherals})
-      });
-      latestBuildLog = data.message || "Build started.";
-      setOutputMode("log");
-      setStatus(`${data.message} Wrote ${data.path}`);
-      startPollingBuild();
     }
 
     async function pollBuildStatus() {
@@ -892,28 +1288,239 @@ HTML = r"""<!doctype html>
       pollTimer = setInterval(pollBuildStatus, 1200);
     }
 
-    async function loadEntanglerBranches() {
-      const data = await api("/api/entangler-branches");
-      const select = $("entangler_core_branch");
-      select.innerHTML = "";
-      const preferred = state.config.repositories.entangler_core_branch || data.selected || data.current;
-      for (const branch of data.branches) {
-        const option = document.createElement("option");
-        option.value = branch;
-        option.textContent = branch;
-        select.appendChild(option);
+    async function loadEntanglerBranches(options = {}) {
+      try {
+        const data = await api("/api/entangler-branches");
+        const select = $("entangler_core_branch");
+        const previous = select.value;
+        select.innerHTML = "";
+        for (const branch of data.branches) {
+          const option = document.createElement("option");
+          option.value = branch;
+          option.textContent = branch;
+          select.appendChild(option);
+        }
+        let preferred = data.current || state.config.repositories.entangler_core_branch || data.selected;
+        if (options.preferCurrent) {
+          preferred = data.current || preferred;
+        } else if (previous && data.branches.includes(previous)) {
+          preferred = previous;
+        }
+        if (preferred && data.branches.includes(preferred)) {
+          select.value = preferred;
+        }
+        $("current_entangler_branch").value = data.current;
+        applyEntanglerBranchDefaultsToRows();
+        scheduleRefresh();
+      } catch (error) {
+        showMapperError("Branch refresh failed.", error);
       }
-      select.value = preferred;
-      $("current_entangler_branch").value = data.current;
     }
 
     async function checkoutSelectedBranch() {
-      const data = await api("/api/checkout-entangler", {
-        method: "POST",
-        body: JSON.stringify({branch: $("entangler_core_branch").value})
-      });
-      $("current_entangler_branch").value = data.current;
-      setStatus(`Entangler core branch is now ${data.current}`);
+      try {
+        const data = await api("/api/checkout-entangler", {
+          method: "POST",
+          body: JSON.stringify({branch: $("entangler_core_branch").value})
+        });
+        $("current_entangler_branch").value = data.current;
+        applyEntanglerBranchDefaultsToRows();
+        setStatus(`Entangler core branch is now ${data.current}`);
+        await loadEntanglerBranches({preferCurrent: true});
+      } catch (error) {
+        showMapperError("Branch checkout failed.", error);
+      }
+    }
+
+    function showView(name) {
+      const custom = name === "custom";
+      $("mapper-main").hidden = custom;
+      $("custom-main").hidden = !custom;
+      $("tab-mapper").classList.toggle("active", !custom);
+      $("tab-custom").classList.toggle("active", custom);
+      if (custom) loadCustomState();
+      else loadEntanglerBranches({preferCurrent: true});
+    }
+
+    function customSpec() {
+      const name = $("custom_logic_name").value.trim();
+      const autoBranch = name ? `feature/${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}` : "";
+      return {
+        logic_name: name,
+        base_branch: $("custom_base_branch").value || "artiq-integration",
+        branch: $("custom_branch").value.trim() || autoBranch,
+        flake_mode: $("custom_flake_mode").value,
+        num_inputs: Number($("custom_num_inputs").value || 2),
+        num_outputs: Number($("custom_num_outputs").value || 2),
+        description: $("custom_description").value,
+        required_behavior: $("custom_required_behavior").value,
+        inputs: $("custom_inputs").value,
+        outputs: $("custom_outputs").value,
+        success_failure_rules: $("custom_success_failure").value,
+        test_behavior: $("custom_test_behavior").value,
+        create_branch: $("custom_create_branch").checked,
+        scaffold_core: $("custom_scaffold_core").checked,
+        scaffold_env: $("custom_scaffold_env").checked,
+        scaffold_config: $("custom_scaffold_config").checked
+      };
+    }
+
+    function setCustomStatus(text) {
+      $("custom-status").textContent = text;
+    }
+
+    function setCustomLogStatus(text) {
+      $("custom-log-status").textContent = text;
+    }
+
+    function renderCustomOutput() {
+      if (customOutputMode === "prompt") {
+        $("custom-output").textContent = latestCustomPrompt || "No Codex task has been written yet.";
+      } else if (customOutputMode === "state") {
+        $("custom-output").textContent = customState ? JSON.stringify(customState, null, 2) : "State is not loaded yet.";
+      } else {
+        $("custom-output").textContent = latestCustomLog || "No custom-logic workflow action has run yet.";
+        const container = $("custom-output").closest(".output");
+        if (container) container.scrollTop = container.scrollHeight;
+      }
+      $("custom-show-prompt").classList.toggle("active", customOutputMode === "prompt");
+      $("custom-show-log").classList.toggle("active", customOutputMode === "log");
+      $("custom-show-state").classList.toggle("active", customOutputMode === "state");
+    }
+
+    function setCustomOutputMode(mode) {
+      customOutputMode = mode;
+      renderCustomOutput();
+    }
+
+    async function loadCustomState() {
+      customState = await api("/api/custom-logic/state");
+      const branchSelect = $("custom_base_branch");
+      const previous = branchSelect.value || customState.current_branch || "artiq-integration";
+      branchSelect.innerHTML = "";
+      for (const branch of customState.branches) {
+        const option = document.createElement("option");
+        option.value = branch;
+        option.textContent = branch;
+        branchSelect.appendChild(option);
+      }
+      if (customState.branches.includes(previous)) branchSelect.value = previous;
+      $("custom_state_branch").textContent = customState.current_branch || "unknown";
+      $("custom_state_flake").textContent = customState.flake_entangler_url || "not found";
+      $("custom_state_envs").textContent = customState.artiq_envs.join(", ") || "none";
+      $("custom_state_codex").textContent = customState.codex_available ? "available" : "task file handoff";
+      if (!customOutputMode || customOutputMode === "state") renderCustomOutput();
+    }
+
+    async function writeCustomRequest() {
+      try {
+        const data = await api("/api/custom-logic/request", {
+          method: "POST",
+          body: JSON.stringify(customSpec())
+        });
+        latestCustomPrompt = data.prompt;
+        latestCustomLog = `Wrote ${data.path}\nTarget branch: ${data.branch}`;
+        setCustomOutputMode("prompt");
+        setCustomStatus(`Wrote ${data.path}`);
+        await loadCustomState();
+      } catch (error) {
+        showCustomError("Write Codex task failed.", error);
+      }
+    }
+
+    async function scaffoldCustomWorkflow() {
+      try {
+        const data = await api("/api/custom-logic/scaffold", {
+          method: "POST",
+          body: JSON.stringify(customSpec())
+        });
+        latestCustomPrompt = data.prompt;
+        latestCustomLog = `${data.log}\n\nPaths:\n${data.paths.map((path) => `- ${path}`).join("\n")}`;
+        setCustomOutputMode("log");
+        setCustomStatus(`Scaffolded ${data.slug} on ${data.branch}`);
+        await loadCustomState();
+        await loadEntanglerBranches({preferCurrent: true});
+      } catch (error) {
+        showCustomError("Scaffold failed.", error);
+      }
+    }
+
+    async function wireCustomFlake() {
+      try {
+        const spec = customSpec();
+        const data = await api("/api/custom-logic/update-flake", {
+          method: "POST",
+          body: JSON.stringify({flake_mode: spec.flake_mode === "none" ? "local_path" : spec.flake_mode, branch: spec.branch})
+        });
+        latestCustomLog = `Updated ${data.path}\n${data.url}`;
+        setCustomOutputMode("log");
+        setCustomStatus(`Flake input is ${data.url}`);
+        await loadCustomState();
+      } catch (error) {
+        showCustomError("Flake wiring failed.", error);
+      }
+    }
+
+    async function copyCustomPrompt() {
+      if (!latestCustomPrompt) await writeCustomRequest();
+      try {
+        await navigator.clipboard.writeText(latestCustomPrompt);
+        setCustomStatus("Copied Codex task prompt.");
+      } catch (error) {
+        setCustomOutputMode("prompt");
+        setCustomStatus("Prompt is shown in the output pane.");
+      }
+    }
+
+    async function runCodexTask() {
+      try {
+        const data = await api("/api/custom-logic/run-codex", {
+          method: "POST",
+          body: JSON.stringify(customSpec())
+        });
+        latestCustomPrompt = data.prompt;
+        latestCustomLog = `${data.message}\n${data.request_path}`;
+        setCustomOutputMode("log");
+        setCustomLogStatus("Codex running.");
+        startPollingCustomChecks();
+      } catch (error) {
+        showCustomError("Run Codex failed.", error);
+      }
+    }
+
+    async function runCustomChecks() {
+      try {
+        const spec = customSpec();
+        const data = await api("/api/custom-logic/run-checks", {
+          method: "POST",
+          body: JSON.stringify({logic_name: spec.logic_name, include_nix: $("custom_include_nix").checked})
+        });
+        latestCustomLog = `${data.message}\n\n${data.commands.join("\n")}`;
+        setCustomOutputMode("log");
+        setCustomLogStatus("Verification running.");
+        startPollingCustomChecks();
+      } catch (error) {
+        showCustomError("Run checks failed.", error);
+      }
+    }
+
+    async function pollCustomChecks() {
+      const data = await api("/api/custom-logic/job-status");
+      latestCustomLog = data.log || "";
+      if (customOutputMode === "log") renderCustomOutput();
+      setCustomLogStatus(`Verification status: ${data.status}`);
+      if (!data.running) {
+        clearInterval(customPollTimer);
+        customPollTimer = null;
+        loadCustomState();
+        loadEntanglerBranches({preferCurrent: true});
+      }
+    }
+
+    function startPollingCustomChecks() {
+      clearInterval(customPollTimer);
+      pollCustomChecks();
+      customPollTimer = setInterval(pollCustomChecks, 1200);
     }
 
     async function init() {
@@ -931,9 +1538,10 @@ HTML = r"""<!doctype html>
       $("coincidence_window_mu").value = state.config.entangler.coincidence_window_mu;
       $("timeout_mu").value = state.config.entangler.timeout_mu;
       $("fast_branch").value = String(state.config.entangler.fast_branch);
-      await loadEntanglerBranches();
+      await loadEntanglerBranches({preferCurrent: true});
       for (const pattern of state.config.entangler.patterns) addPatternRow(pattern);
       for (const peripheral of state.peripherals) addRow(peripheral);
+      applyEntanglerBranchDefaultsToRows();
       $("add").addEventListener("click", () => addRow());
       $("add-pattern").addEventListener("click", () => addPatternRow({name: `pattern_${$("pattern-rows").children.length}`, inputs: []}));
       $("all-pattern").addEventListener("click", () => {
@@ -943,19 +1551,43 @@ HTML = r"""<!doctype html>
       });
       $("entangler").addEventListener("click", () => {
         $("rows").innerHTML = "";
-        for (const peripheral of state.peripherals) addRow(peripheral);
+        addRow(defaultEntanglerPeripheral());
       });
       $("save").addEventListener("click", saveJson);
+      $("refresh-branches").addEventListener("click", () => loadEntanglerBranches({preferCurrent: true}));
       $("checkout-branch").addEventListener("click", checkoutSelectedBranch);
       $("copy").addEventListener("click", copyCommand);
       $("run").addEventListener("click", runBuild);
       $("log").addEventListener("click", () => setOutputMode("log"));
       $("preview").addEventListener("click", () => setOutputMode("json"));
       $("plan").addEventListener("click", () => setOutputMode("plan"));
-      for (const id of ["variant", "hw_rev", "drtio_role", "rtio_frequency", "entangler_core_branch", "num_inputs", "num_outputs", "num_generic_inputs", "num_patterns_allowed", "coincidence_window_mu", "timeout_mu", "fast_branch"]) {
+      $("tab-mapper").addEventListener("click", () => showView("mapper"));
+      $("tab-custom").addEventListener("click", () => showView("custom"));
+      $("custom-refresh").addEventListener("click", loadCustomState);
+      $("custom-write-request").addEventListener("click", writeCustomRequest);
+      $("custom-run-codex").addEventListener("click", runCodexTask);
+      $("custom-copy").addEventListener("click", copyCustomPrompt);
+      $("custom-scaffold").addEventListener("click", scaffoldCustomWorkflow);
+      $("custom-wire-flake").addEventListener("click", wireCustomFlake);
+      $("custom-run-checks").addEventListener("click", runCustomChecks);
+      $("custom-show-prompt").addEventListener("click", () => setCustomOutputMode("prompt"));
+      $("custom-show-log").addEventListener("click", () => setCustomOutputMode("log"));
+      $("custom-show-state").addEventListener("click", () => setCustomOutputMode("state"));
+      for (const id of ["variant", "hw_rev", "drtio_role", "rtio_frequency", "num_inputs", "num_outputs", "num_generic_inputs", "num_patterns_allowed", "coincidence_window_mu", "timeout_mu", "fast_branch"]) {
         $(id).addEventListener("input", scheduleRefresh);
       }
+      $("entangler_core_branch").addEventListener("input", () => {
+        applyEntanglerBranchDefaultsToRows();
+        scheduleRefresh();
+      });
+      $("custom_logic_name").addEventListener("input", () => {
+        const name = $("custom_logic_name").value.trim();
+        if (!$("custom_branch").value.trim() && name) {
+          $("custom_branch").placeholder = `feature/${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+        }
+      });
       refresh();
+      loadCustomState();
     }
 
     init().catch((error) => {

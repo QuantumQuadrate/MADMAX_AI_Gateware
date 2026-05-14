@@ -32,3 +32,8 @@ packages = ["madmax_ai_gateware"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.uv.workspace]
+members = [
+    "img",
+]

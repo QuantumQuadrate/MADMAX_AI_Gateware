@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from madmax_ai_gateware.build_gateware import render_build_command
+from madmax_ai_gateware.build_gateware import render_build_command, render_build_steps
 from madmax_ai_gateware.config import load_config
-from madmax_ai_gateware.artiq_description import make_description, validate_peripherals, write_artiq_description
+from madmax_ai_gateware.artiq_description import logic_mode_for_branch, make_description, validate_peripherals, write_artiq_description
 from madmax_ai_gateware.generate_device_db import generate_device_db
 from madmax_ai_gateware.generate_experiment import generate_experiment
 from madmax_ai_gateware.generate_settings import generate_settings
@@ -48,6 +48,15 @@ def test_dry_run_build_command_generation():
     assert "entangler_1dio_2in_2out.json" in command
 
 
+def test_boot_image_step_uses_entangler_override():
+    cfg = load_config(DEFAULT_CONFIG)
+    steps = render_build_steps(cfg)
+    boot_step = next(step for step in steps if "mkbootimage" in step)
+
+    assert "--override-input entangler-core" in boot_step
+    assert "path:" in boot_step
+
+
 def test_generated_artiq_json_contains_entangler(tmp_path: Path):
     cfg = load_config(DEFAULT_CONFIG)
     output = write_artiq_description(cfg, tmp_path / "description.json")
@@ -56,6 +65,28 @@ def test_generated_artiq_json_contains_entangler(tmp_path: Path):
     assert '"target": "kasli_soc"' in text
     assert '"type": "entangler"' in text
     assert '"ports": [' in text
+
+
+def test_custom_logic_branch_sets_entangler_logic_mode():
+    cfg = load_config(DEFAULT_CONFIG)
+    cfg.repositories.entangler_core_branch = "feature/and-nand-test"
+    description = make_description(cfg, peripherals=[{"type": "entangler", "ports": [0]}])
+
+    entangler = description["peripherals"][0]
+    assert entangler["logic_mode"] == "and_nand_test"
+
+
+def test_legacy_entangler_branch_keeps_logic_mode_implicit():
+    cfg = load_config(DEFAULT_CONFIG)
+    cfg.repositories.entangler_core_branch = "artiq-integration"
+    description = make_description(cfg, peripherals=[{"type": "entangler", "ports": [0]}])
+
+    entangler = description["peripherals"][0]
+    assert "logic_mode" not in entangler
+
+
+def test_logic_mode_for_feature_branch_is_custom_logic_slug():
+    assert logic_mode_for_branch("feature/example-custom-logic") == "example_custom_logic"
 
 
 def test_dio_defaults_are_added_to_artiq_json():
@@ -84,3 +115,14 @@ def test_generated_settings_contains_entangler_logic(tmp_path: Path):
 
     assert "num_patterns_allowed = 2" in text
     assert "bitfield = 3" in text
+
+
+def test_generated_atom_photon_parity_experiment_uses_parity_driver_api(tmp_path: Path):
+    cfg = load_config(Path("configs/experiments/atom_photon_parity_6.yaml"))
+    output = generate_experiment(cfg, tmp_path)
+    text = output.read_text(encoding="utf-8")
+
+    assert "set_num_attempts" in text
+    assert "set_branch_done_delay_mu" in text
+    assert "set_patterns" not in text
+    compile(text, str(output), "exec")

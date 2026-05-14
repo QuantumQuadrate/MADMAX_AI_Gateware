@@ -1,0 +1,10 @@
+[project]
+name = "madmax-ai-gateware-img"
+version = "0.1.0"
+description = "Dependencies for using qutip and matplotlib"
+requires-python = ">=3.9"
+
+dependencies = [
+    "qutip>=4.7.0",
+    "matplotlib>=3.0",
+]

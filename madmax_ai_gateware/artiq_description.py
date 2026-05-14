@@ -54,15 +54,47 @@ CARD_DEFINITIONS: dict[str, CardDefinition] = {
 }
 
 
+LEGACY_ENTANGLER_BRANCHES = {"", "master", "main", "artiq-integration"}
+
+
+def logic_mode_for_branch(branch: str) -> str:
+    branch_name = branch.strip()
+    if branch_name.startswith("origin/"):
+        branch_name = branch_name.removeprefix("origin/")
+    if branch_name in LEGACY_ENTANGLER_BRANCHES:
+        return "legacy"
+    if branch_name.startswith("feature/"):
+        branch_name = branch_name.removeprefix("feature/")
+    if branch_name in {"atom-photon-parity", "atom-photon-parity-gateware-redesign"}:
+        return "atom_photon_parity"
+    return branch_name.replace("-", "_").replace("/", "_")
+
+
+def entangler_default_options(cfg: ExperimentConfig) -> dict[str, Any]:
+    options = {
+        "uses_reference": False,
+        "running_output": False,
+    }
+    logic_mode = logic_mode_for_branch(cfg.repositories.entangler_core_branch)
+    if logic_mode != "legacy":
+        options["logic_mode"] = logic_mode
+    return options
+
+
+def card_default_options(card_type: str, cfg: ExperimentConfig | None = None) -> dict[str, Any]:
+    if card_type == "entangler" and cfg is not None:
+        return entangler_default_options(cfg)
+    definition = CARD_DEFINITIONS[card_type]
+    return dict(definition.default_options)
+
+
 def default_entangler_peripherals(cfg: ExperimentConfig) -> list[dict[str, Any]]:
-    return [
-        {
-            "type": "entangler",
-            "ports": [cfg.hardware.dio_eem],
-            "uses_reference": False,
-            "running_output": False,
-        }
-    ]
+    peripheral = {
+        "type": "entangler",
+        "ports": [cfg.hardware.dio_eem],
+        **entangler_default_options(cfg),
+    }
+    return [peripheral]
 
 
 def make_description(
@@ -70,7 +102,8 @@ def make_description(
     peripherals: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     normalized_peripherals = normalize_peripherals(
-        peripherals if peripherals is not None else default_entangler_peripherals(cfg)
+        peripherals if peripherals is not None else default_entangler_peripherals(cfg),
+        cfg=cfg,
     )
     return {
         "target": cfg.target.board,
@@ -94,7 +127,11 @@ def write_artiq_description(
     return output_path
 
 
-def normalize_peripherals(peripherals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def normalize_peripherals(
+    peripherals: list[dict[str, Any]],
+    *,
+    cfg: ExperimentConfig | None = None,
+) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
     for peripheral in peripherals:
         card_type = peripheral.get("type")
@@ -103,7 +140,7 @@ def normalize_peripherals(peripherals: list[dict[str, Any]]) -> list[dict[str, A
             normalized.append(dict(peripheral))
             continue
 
-        merged = {"type": card_type, **definition.default_options}
+        merged = {"type": card_type, **card_default_options(card_type, cfg)}
         if (definition.port_count != 0 or definition.min_ports is not None) and "ports" in peripheral:
             merged["ports"] = peripheral["ports"]
         for key, value in peripheral.items():

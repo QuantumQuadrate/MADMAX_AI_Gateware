@@ -1,0 +1,60 @@
+experiment:
+  name: and_nand_test
+  description: AND/NAND custom entangler mode with two-bit timer loopback timestamping.
+
+target:
+  board: kasli_soc
+  artiq_version: 7
+  variant: and_nand_test
+  hw_rev: v1.0
+  drtio_role: standalone
+  rtio_frequency: 125000000.0
+
+repositories:
+  artiq_env_path: repos/madmax-artiq-env
+  entangler_core_path: repos/madmax-entangler-core
+  entangler_core_branch: feature/and-nand-test
+  artiq_zynq_path: repos/madmax-artiq-zynq
+
+hardware:
+  dio_eem: 0
+  input_pads:
+    - dio0
+    - dio1
+    - dio2
+    - dio3
+  output_pads:
+    - dio4
+    - dio5
+    - dio6
+    - dio7
+
+entangler:
+  num_inputs: 4
+  num_outputs: 4
+  num_generic_inputs: 0
+  num_patterns_allowed: 2
+  coincidence_window_mu: 250
+  timeout_mu: 10000
+  fast_branch: true
+  requested_goal: AND/NAND gate outputs plus two-bit timer timestamp loopback
+  input_names:
+    - logic_a
+    - logic_b
+    - timer_bit0_loopback
+    - timer_bit1_loopback
+  output_names:
+    - and_out
+    - nand_out
+    - timer_bit0
+    - timer_bit1
+  patterns:
+    - name: logic_inputs_high
+      inputs: [0, 1]
+    - name: loopback_timestamps_seen
+      inputs: [2, 3]
+
+build:
+  output_dir: build/generated
+  dry_run: true
+  command_template: "cd {artiq_zynq_path} && nix develop --command bash -lc 'cd src && python gateware/{board}.py -g {gateware_build_dir} {artiq_description_json}'"

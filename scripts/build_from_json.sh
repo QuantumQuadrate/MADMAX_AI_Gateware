@@ -73,7 +73,7 @@ printf '%s\n' \
   "  firmware/armv7-none-eabihf/release/$FIRMWARE" \
   '}' > boot.bif
 
-nix develop .. --command mkbootimage boot.bif boot.bin
+nix develop "${NIX_ENTANGLER_OVERRIDE[@]}" .. --command mkbootimage boot.bif boot.bin
 
 cd "$ZYNQ"
 nix develop "${NIX_ENTANGLER_OVERRIDE[@]}" --command bash -lc 'python entangler_device_db_maker.py "$1" > device_db.py' bash "$DESC_ABS"
