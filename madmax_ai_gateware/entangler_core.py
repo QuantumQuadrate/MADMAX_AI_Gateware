@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
-from .paths import WORKSPACE_ROOT, resolve_workspace_path
+from .paths import resolve_workspace_path
 
 
 ENTANGLER_CORE_PATH = resolve_workspace_path("repos/madmax-entangler-core")
 
 
-def list_entangler_branches() -> list[str]:
+def _core_path(path: str | Path | None = None) -> Path:
+    return resolve_workspace_path(path) if path is not None else ENTANGLER_CORE_PATH
+
+
+def list_entangler_branches(path: str | Path | None = None) -> list[str]:
     result = subprocess.run(
         ["git", "branch", "-a", "--format=%(refname:short)"],
-        cwd=ENTANGLER_CORE_PATH,
+        cwd=_core_path(path),
         check=True,
         capture_output=True,
         text=True,
@@ -27,10 +32,11 @@ def list_entangler_branches() -> list[str]:
     return sorted(branches)
 
 
-def current_entangler_branch() -> str:
+def current_entangler_branch(path: str | Path | None = None) -> str:
+    repo = _core_path(path)
     result = subprocess.run(
         ["git", "branch", "--show-current"],
-        cwd=ENTANGLER_CORE_PATH,
+        cwd=repo,
         check=True,
         capture_output=True,
         text=True,
@@ -40,7 +46,7 @@ def current_entangler_branch() -> str:
         return branch
     result = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"],
-        cwd=ENTANGLER_CORE_PATH,
+        cwd=repo,
         check=True,
         capture_output=True,
         text=True,
@@ -48,18 +54,19 @@ def current_entangler_branch() -> str:
     return result.stdout.strip()
 
 
-def checkout_entangler_branch(branch: str) -> str:
+def checkout_entangler_branch(branch: str, path: str | Path | None = None) -> str:
+    repo = _core_path(path)
     branch = branch.strip()
     if not branch:
         raise ValueError("Entangler branch cannot be empty")
 
-    current = current_entangler_branch()
+    current = current_entangler_branch(repo)
     if branch == current:
         return current
 
     status = subprocess.run(
         ["git", "status", "--short"],
-        cwd=ENTANGLER_CORE_PATH,
+        cwd=repo,
         check=True,
         capture_output=True,
         text=True,
@@ -73,20 +80,20 @@ def checkout_entangler_branch(branch: str) -> str:
 
     local = subprocess.run(
         ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
-        cwd=ENTANGLER_CORE_PATH,
+        cwd=repo,
     )
     if local.returncode == 0:
-        subprocess.run(["git", "checkout", branch], cwd=ENTANGLER_CORE_PATH, check=True)
+        subprocess.run(["git", "checkout", branch], cwd=repo, check=True)
     else:
         remote = subprocess.run(
             ["git", "show-ref", "--verify", "--quiet", f"refs/remotes/origin/{branch}"],
-            cwd=ENTANGLER_CORE_PATH,
+            cwd=repo,
         )
         if remote.returncode != 0:
             raise RuntimeError(f"Unknown entangler-core branch: {branch}")
-        subprocess.run(["git", "checkout", "-B", branch, f"origin/{branch}"], cwd=ENTANGLER_CORE_PATH, check=True)
-    return current_entangler_branch()
+        subprocess.run(["git", "checkout", "-B", branch, f"origin/{branch}"], cwd=repo, check=True)
+    return current_entangler_branch(repo)
 
 
-def entangler_override_args() -> list[str]:
-    return ["--override-input", "entangler-core", f"path:{ENTANGLER_CORE_PATH}"]
+def entangler_override_args(path: str | Path | None = None) -> list[str]:
+    return ["--override-input", "entangler-core", f"path:{_core_path(path)}"]

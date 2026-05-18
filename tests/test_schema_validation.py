@@ -12,3 +12,9 @@ def test_validation_passes_for_2in_2out():
     assert cfg.hardware.input_pads == ["dio0", "dio1"]
     assert cfg.hardware.output_pads == ["dio2", "dio3"]
 
+
+def test_validation_requires_software_ttl_bypass():
+    cfg = load_config(DEFAULT_CONFIG)
+    cfg.entangler.ttl_bypass.required = False
+
+    assert "entangler.ttl_bypass.required must stay true" in validate_config(cfg)[0]

@@ -17,6 +17,13 @@ def validate_config(cfg: ExperimentConfig, *, require_submodules: bool = False) 
     if cfg.target.board != "kasli_soc":
         errors.append(f"unsupported target.board {cfg.target.board!r}; this workspace currently targets kasli_soc")
 
+    if not cfg.entangler.ttl_bypass.required:
+        errors.append("entangler.ttl_bypass.required must stay true for custom TTL-owning gateware")
+    if cfg.entangler.ttl_bypass.software_setting != "enable":
+        errors.append("entangler.ttl_bypass.software_setting must be 'enable' so software can disable custom TTL logic")
+    if cfg.entangler.ttl_bypass.disabled_value != 0:
+        errors.append("entangler.ttl_bypass.disabled_value must be 0 so enable=0 means normal TTL passthrough")
+
     input_indices = [_pin_index(pin) for pin in cfg.hardware.input_pads]
     output_indices = [_pin_index(pin) for pin in cfg.hardware.output_pads]
     if input_indices and output_indices and max(input_indices) >= min(output_indices):
@@ -39,4 +46,3 @@ def load_and_validate(path: str | Path, *, require_submodules: bool = False) -> 
 
 def _pin_index(pin: str) -> int:
     return int(pin.removeprefix("dio"))
-

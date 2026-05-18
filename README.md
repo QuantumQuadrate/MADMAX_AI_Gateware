@@ -81,6 +81,19 @@ uv run madmax generate-artiq-json --config configs/experiments/2in_2out.yaml
 
 By default, generated files are written under `build/generated/`.
 
+Create a reproducibility artifact folder:
+
+```bash
+uv run madmax generate-artifact --config configs/experiments/2in_2out.yaml
+```
+
+Artifacts are written under `build/artifacts/` by default. Each artifact includes
+the generated Kasli-SoC JSON description, runtime `settings.toml`, compile-time
+`entangler_settings.toml`, `device_db.py`, a smoke experiment, the source and
+normalized experiment config, and a `manifest.json` with the selected
+`entangler_core_branch`, actual checkout commit, dirty status, and build
+commands.
+
 ## Gateware Build Dry Run
 
 The initial implementation only performs dry-run build planning:
@@ -98,6 +111,11 @@ The dry-run prints the end-to-end `madmax-artiq-zynq` flow:
 5. Generate the matching ARTIQ `device_db.py` from the same JSON description.
 
 The fallback single command remains controlled by `build.command_template` in the YAML config. This keeps build details explicit while the surrounding tooling stays stable.
+
+`build-gateware` prepares the JSON/settings inputs and, unless disabled with
+`--no-artifact`, also writes the same artifact bundle before printing or running
+the build. For real builds it checks out `repositories.entangler_core_branch`
+first, refusing to switch if the entangler-core checkout has uncommitted changes.
 
 ## Custom Entangler Logic Workflow
 
@@ -170,6 +188,10 @@ hard requirement, not an optional convenience. The intended contract is:
 This keeps a custom Entangler build from permanently stealing a DIO card during
 debugging or mixed experiments. Tests for a new logic mode should prove both the
 custom path and the disabled passthrough path.
+
+The experiment config records this as `entangler.ttl_bypass`. The validator
+requires `required: true`, `software_setting: enable`, and `disabled_value: 0`,
+so every generated artifact carries the same software bypass contract.
 
 ### 2. Point ARTIQ-Zynq At The New Logic
 

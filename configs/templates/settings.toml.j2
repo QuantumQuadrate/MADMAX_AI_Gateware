@@ -36,6 +36,13 @@ requested_goal = "{{ cfg.entangler.requested_goal }}"
 input_names = [{% for name in cfg.entangler.input_names %}"{{ name }}"{% if not loop.last %}, {% endif %}{% endfor %}]
 output_names = [{% for name in cfg.entangler.output_names %}"{{ name }}"{% if not loop.last %}, {% endif %}{% endfor %}]
 
+[entangler.ttl_bypass]
+required = {{ cfg.entangler.ttl_bypass.required | lower }}
+software_setting = "{{ cfg.entangler.ttl_bypass.software_setting }}"
+disabled_value = {{ cfg.entangler.ttl_bypass.disabled_value }}
+behavior = "{{ cfg.entangler.ttl_bypass.behavior }}"
+notes = [{% for note in cfg.entangler.ttl_bypass.notes %}"{{ note }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+
 {% for pattern in cfg.entangler.patterns %}
 [[entangler.patterns]]
 name = "{{ pattern.name }}"

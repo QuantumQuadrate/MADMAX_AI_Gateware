@@ -376,9 +376,17 @@ def _scaffold_experiment_config(spec: dict[str, Any], log: list[str]) -> str:
               patterns:
                 - name: all_inputs
                   inputs: [{pattern_inputs}]
+              ttl_bypass:
+                required: true
+                software_setting: enable
+                disabled_value: 0
+                behavior: normal ARTIQ TTL passthrough when custom logic is disabled
+                notes: []
 
             build:
               output_dir: build/generated
+              artifact_dir: build/artifacts
+              create_artifact: true
               dry_run: true
               command_template: "cd {{artiq_zynq_path}} && nix develop --command bash -lc 'cd src && python gateware/{{board}}.py -g {{gateware_build_dir}} {{artiq_description_json}}'"
             """

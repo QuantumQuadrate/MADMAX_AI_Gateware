@@ -7,11 +7,13 @@ import typer
 from rich.console import Console
 
 from . import artiq_description as ad
+from . import artifacts
 from . import build_gateware as bg
 from . import generate_device_db as gdb
 from . import generate_experiment as ge
 from . import generate_settings as gs
 from .config import load_config
+from .entangler_core import checkout_entangler_branch
 from .paths import DEFAULT_CONFIG, display_path
 from .submodules import check_submodules, init_submodules
 from .validate import load_and_validate, validate_config
@@ -117,13 +119,40 @@ def generate_artiq_json_command(
     console.print(f"[green]Generated ARTIQ JSON description:[/green] {display_path(path)}")
 
 
+@app.command("generate-artifact")
+def generate_artifact_command(
+    config: Path = _config_option(),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Artifact folder path."),
+    core_host: str = typer.Option("192.168.1.75", "--core-host", help="Kasli-SoC core host for device_db.py."),
+) -> None:
+    """Create a reproducible artifact folder for the selected experiment and entangler branch."""
+    cfg = _load_valid_config(config)
+    path = artifacts.create_artifact_bundle(cfg, output=output, core_host=core_host)
+    console.print(f"[green]Created artifact:[/green] {display_path(path)}")
+
+
 @app.command("build-gateware")
 def build_gateware_command(
     config: Path = _config_option(),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print the build command instead of running it."),
+    checkout_branch: bool = typer.Option(True, "--checkout-branch/--no-checkout-branch", help="Checkout repositories.entangler_core_branch before building."),
+    artifact: bool = typer.Option(True, "--artifact/--no-artifact", help="Write a reproducibility artifact folder."),
 ) -> None:
     """Build or dry-run the Kasli-SoC gateware command."""
     cfg = _load_valid_config(config)
+    if checkout_branch and not (dry_run or cfg.build.dry_run):
+        checked_out = checkout_entangler_branch(
+            cfg.repositories.entangler_core_branch,
+            cfg.repositories.entangler_core_path,
+        )
+        console.print(f"[green]Using entangler-core branch:[/green] {checked_out}")
+    build_inputs = artifacts.prepare_build_inputs(cfg)
+    console.print(f"[green]Prepared JSON:[/green] {display_path(build_inputs['artiq_description_json'])}")
+    console.print(f"[green]Prepared entangler settings:[/green] {display_path(build_inputs['entangler_settings'])}")
+    if artifact and cfg.build.create_artifact:
+        artifact_path = artifacts.create_artifact_bundle(cfg)
+        console.print(f"[green]Created artifact:[/green] {display_path(artifact_path)}")
+
     effective_dry_run = dry_run or cfg.build.dry_run
     if effective_dry_run:
         for line in bg.dry_run_lines(cfg):

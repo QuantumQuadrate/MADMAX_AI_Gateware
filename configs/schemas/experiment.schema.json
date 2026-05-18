@@ -67,6 +67,16 @@
               "inputs": {"type": "array", "items": {"type": "integer", "minimum": 0}}
             }
           }
+        },
+        "ttl_bypass": {
+          "type": "object",
+          "properties": {
+            "required": {"type": "boolean", "default": true},
+            "software_setting": {"type": "string", "default": "enable"},
+            "disabled_value": {"type": "integer", "default": 0},
+            "behavior": {"type": "string", "default": "normal ARTIQ TTL passthrough"},
+            "notes": {"type": "array", "items": {"type": "string"}}
+          }
         }
       }
     },
@@ -75,6 +85,8 @@
       "required": ["output_dir", "dry_run", "command_template"],
       "properties": {
         "output_dir": {"type": "string"},
+        "artifact_dir": {"type": "string"},
+        "create_artifact": {"type": "boolean"},
         "dry_run": {"type": "boolean"},
         "command_template": {"type": "string", "minLength": 1}
       }

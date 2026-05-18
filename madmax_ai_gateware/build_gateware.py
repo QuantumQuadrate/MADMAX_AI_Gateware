@@ -16,10 +16,12 @@ def build_context(cfg: ExperimentConfig) -> dict[str, str]:
         "artiq_env_path": str(resolve_workspace_path(cfg.repositories.artiq_env_path)),
         "artiq_zynq_path": str(resolve_workspace_path(cfg.repositories.artiq_zynq_path)),
         "entangler_core_path": str(resolve_workspace_path(cfg.repositories.entangler_core_path)),
+        "entangler_core_branch": cfg.repositories.entangler_core_branch,
         "board": cfg.target.board,
         "variant": cfg.target.variant,
         "artiq_version": str(cfg.target.artiq_version),
         "output_dir": str(output_dir),
+        "artifact_dir": str(cfg.artifact_dir),
         "gateware_build_dir": str(output_dir / "gateware"),
         "settings_path": str(output_dir / "settings.toml"),
         "device_db_path": str(output_dir / "device_db.py"),
@@ -41,7 +43,7 @@ def render_build_steps(cfg: ExperimentConfig) -> list[str]:
     zynq = Path(context["artiq_zynq_path"])
     desc = shlex.quote(context["artiq_description_json"])
     firmware = firmware_name(cfg)
-    override = " ".join(shlex.quote(arg) for arg in entangler_override_args())
+    override = " ".join(shlex.quote(arg) for arg in entangler_override_args(cfg.repositories.entangler_core_path))
     gateware_script = shlex.quote(f"cd src && python gateware/kasli_soc.py -g ../build/gateware {desc}")
     firmware_script = shlex.quote(f"cd src && make TARGET=kasli_soc GWARGS={desc} {shlex.quote(firmware)}")
     device_db_script = shlex.quote(f"python entangler_device_db_maker.py {desc} > device_db.py")
@@ -76,6 +78,7 @@ def dry_run_lines(cfg: ExperimentConfig) -> list[str]:
         "Dry-run gateware build plan:",
         f"  config: {display_path(cfg.source_path) if cfg.source_path else '<in-memory>'}",
         f"  output: {display_path(cfg.output_dir)}",
+        f"  entangler core: {display_path(cfg.repositories.entangler_core_path)} @ {cfg.repositories.entangler_core_branch}",
         f"  JSON description: {display_path(build_context(cfg)['artiq_description_json'])}",
     ]
     for index, step in enumerate(render_build_steps(cfg), start=1):

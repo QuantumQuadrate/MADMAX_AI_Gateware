@@ -20,6 +20,7 @@ from .artiq_description import (
     validate_peripherals,
     write_artiq_description,
 )
+from .artifacts import create_artifact_bundle, prepare_build_inputs
 from .build_gateware import firmware_name, render_build_steps
 from .config import ExperimentConfig, load_config
 from .custom_logic import (
@@ -93,8 +94,8 @@ class WebGuiHandler(BaseHTTPRequestHandler):
         elif parsed.path == "/api/entangler-branches":
             self._send_json(
                 {
-                    "branches": list_entangler_branches(),
-                    "current": current_entangler_branch(),
+                    "branches": list_entangler_branches(self.config.repositories.entangler_core_path),
+                    "current": current_entangler_branch(self.config.repositories.entangler_core_path),
                     "selected": self.config.repositories.entangler_core_branch,
                 }
             )
@@ -126,12 +127,18 @@ class WebGuiHandler(BaseHTTPRequestHandler):
                     return
                 output = body.get("output") or None
                 path = write_artiq_description(cfg, output, peripherals=peripherals)
-                settings_path = write_entangler_settings(cfg)
-                self._send_json({"ok": True, "path": display_path(path), "settings_path": display_path(settings_path)})
+                settings_path = write_entangler_settings(cfg, cfg.output_dir / "entangler_settings.toml")
+                artifact_path = create_artifact_bundle(cfg, peripherals=peripherals) if cfg.build.create_artifact else None
+                self._send_json({
+                    "ok": True,
+                    "path": display_path(path),
+                    "settings_path": display_path(settings_path),
+                    "artifact_path": display_path(artifact_path) if artifact_path else None,
+                })
             elif parsed.path == "/api/checkout-entangler":
                 body = self._read_json()
                 branch = body.get("branch", "")
-                current = checkout_entangler_branch(branch)
+                current = checkout_entangler_branch(branch, self.config.repositories.entangler_core_path)
                 self._send_json({"ok": True, "current": current})
             elif parsed.path == "/api/copy-command":
                 body = self._read_json()
@@ -142,8 +149,15 @@ class WebGuiHandler(BaseHTTPRequestHandler):
                     self._send_json({"ok": False, "errors": errors}, status=HTTPStatus.BAD_REQUEST)
                     return
                 path = write_artiq_description(cfg, body.get("output") or None, peripherals=peripherals)
-                settings_path = write_entangler_settings(cfg)
-                self._send_json({"ok": True, "path": display_path(path), "settings_path": display_path(settings_path), "command": _copy_paste_command(cfg)})
+                settings_path = write_entangler_settings(cfg, cfg.output_dir / "entangler_settings.toml")
+                artifact_path = create_artifact_bundle(cfg, peripherals=peripherals) if cfg.build.create_artifact else None
+                self._send_json({
+                    "ok": True,
+                    "path": display_path(path),
+                    "settings_path": display_path(settings_path),
+                    "artifact_path": display_path(artifact_path) if artifact_path else None,
+                    "command": _copy_paste_command(cfg),
+                })
             elif parsed.path == "/api/run-build":
                 body = self._read_json()
                 cfg = self._config_from_body(body)
@@ -152,9 +166,13 @@ class WebGuiHandler(BaseHTTPRequestHandler):
                 if errors:
                     self._send_json({"ok": False, "errors": errors}, status=HTTPStatus.BAD_REQUEST)
                     return
-                path = write_artiq_description(cfg, body.get("output") or None, peripherals=peripherals)
-                settings_path = write_entangler_settings(cfg)
+                build_inputs = prepare_build_inputs(cfg, peripherals=peripherals)
+                artifact_path = create_artifact_bundle(cfg, peripherals=peripherals) if cfg.build.create_artifact else None
+                path = build_inputs["artiq_description_json"]
+                settings_path = build_inputs["entangler_settings"]
                 started = _start_build_job(cfg, path, settings_path)
+                if artifact_path:
+                    started["artifact_path"] = display_path(artifact_path)
                 status = HTTPStatus.OK if started["ok"] else HTTPStatus.CONFLICT
                 self._send_json(started, status=status)
             elif parsed.path == "/api/custom-logic/request":
@@ -295,7 +313,10 @@ def _append_job_log(text: str) -> None:
 
 def _start_build_job(cfg: ExperimentConfig, json_path: Path, settings_path: Path) -> dict[str, Any]:
     try:
-        checked_out = checkout_entangler_branch(cfg.repositories.entangler_core_branch)
+        checked_out = checkout_entangler_branch(
+            cfg.repositories.entangler_core_branch,
+            cfg.repositories.entangler_core_path,
+        )
     except Exception as exc:
         return {"ok": False, "errors": [str(exc)]}
 

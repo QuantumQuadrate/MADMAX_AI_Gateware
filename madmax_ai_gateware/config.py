@@ -71,6 +71,14 @@ class Hardware(BaseModel):
         return self
 
 
+class TTLBypass(BaseModel):
+    required: bool = True
+    software_setting: str = Field(default="enable", min_length=1)
+    disabled_value: int = 0
+    behavior: str = Field(default="normal ARTIQ TTL passthrough", min_length=1)
+    notes: list[str] = Field(default_factory=list)
+
+
 class Entangler(BaseModel):
     num_inputs: int = Field(ge=1)
     num_outputs: int = Field(ge=1)
@@ -83,6 +91,7 @@ class Entangler(BaseModel):
     input_names: list[str] = Field(default_factory=list)
     output_names: list[str] = Field(default_factory=list)
     patterns: list["EntanglerPattern"] = Field(default_factory=list)
+    ttl_bypass: TTLBypass = Field(default_factory=TTLBypass)
 
     @model_validator(mode="after")
     def validate_logic(self) -> "Entangler":
@@ -102,6 +111,8 @@ class EntanglerPattern(BaseModel):
 
 class Build(BaseModel):
     output_dir: str = "build/generated"
+    artifact_dir: str = "build/artifacts"
+    create_artifact: bool = True
     dry_run: bool = True
     command_template: str = Field(min_length=1)
 
@@ -134,6 +145,10 @@ class ExperimentConfig(BaseModel):
     @property
     def output_dir(self) -> Path:
         return resolve_workspace_path(self.build.output_dir)
+
+    @property
+    def artifact_dir(self) -> Path:
+        return resolve_workspace_path(self.build.artifact_dir)
 
 
 def load_config(path: str | Path) -> ExperimentConfig:
