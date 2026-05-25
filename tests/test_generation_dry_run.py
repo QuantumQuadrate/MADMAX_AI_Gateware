@@ -62,6 +62,7 @@ def test_boot_image_step_uses_entangler_override():
 def test_prepare_build_inputs_writes_json_and_entangler_settings(tmp_path: Path):
     cfg = load_config(DEFAULT_CONFIG)
     cfg.build.output_dir = str(tmp_path / "generated")
+    cfg.build.description_json = str(tmp_path / "descriptions" / "entangler_1dio_2in_2out.json")
 
     outputs = prepare_build_inputs(cfg)
 
@@ -77,8 +78,31 @@ def test_generated_artiq_json_contains_entangler(tmp_path: Path):
     text = output.read_text(encoding="utf-8")
 
     assert '"target": "kasli_soc"' in text
+    assert '"type": "dio"' in text
     assert '"type": "entangler"' in text
+    assert '"overlay": true' in text
     assert '"ports": [' in text
+
+
+def test_default_description_overlays_entangler_on_normal_dio():
+    cfg = load_config(DEFAULT_CONFIG)
+    description = make_description(cfg)
+
+    dio, entangler = description["peripherals"][:2]
+    assert dio["type"] == "dio"
+    assert entangler["type"] == "entangler"
+    assert dio["ports"] == entangler["ports"] == [cfg.hardware.dio_eem]
+    assert entangler["overlay"] is True
+    assert validate_peripherals(description["peripherals"], drtio_role="standalone") == []
+
+
+def test_atom_photon_parity_overlay_dio_exports_edge_counters():
+    cfg = load_config(Path("gateware_build/configs/experiments/atom_photon_parity_6.yaml"))
+    description = make_description(cfg)
+
+    dio = description["peripherals"][0]
+    assert dio["type"] == "dio"
+    assert dio["edge_counter"] is True
 
 
 def test_custom_logic_branch_sets_entangler_logic_mode():
@@ -132,7 +156,7 @@ def test_generated_settings_contains_entangler_logic(tmp_path: Path):
 
 
 def test_generated_atom_photon_parity_experiment_uses_parity_driver_api(tmp_path: Path):
-    cfg = load_config(Path("configs/experiments/atom_photon_parity_6.yaml"))
+    cfg = load_config(Path("gateware_build/configs/experiments/atom_photon_parity_6.yaml"))
     output = generate_experiment(cfg, tmp_path)
     text = output.read_text(encoding="utf-8")
 
@@ -140,6 +164,17 @@ def test_generated_atom_photon_parity_experiment_uses_parity_driver_api(tmp_path
     assert "set_branch_done_delay_mu" in text
     assert "set_patterns" not in text
     compile(text, str(output), "exec")
+
+
+def test_atom_photon_parity_settings_keep_spare_input_ttls_exported(tmp_path: Path):
+    cfg = load_config(Path("gateware_build/configs/experiments/atom_photon_parity_6.yaml"))
+    cfg.build.output_dir = str(tmp_path / "generated")
+    cfg.build.description_json = str(tmp_path / "descriptions" / "atom_photon_parity_6.json")
+    outputs = prepare_build_inputs(cfg)
+    text = outputs["entangler_settings"].read_text(encoding="utf-8")
+
+    assert "NUM_ENTANGLER_INPUT_SIGNALS = 2" in text
+    assert "NUM_GENERIC_INPUT_SIGNALS = 2" in text
 
 
 def test_artifact_bundle_records_branch_and_bypass_contract(tmp_path: Path):

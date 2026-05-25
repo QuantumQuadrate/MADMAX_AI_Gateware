@@ -18,3 +18,16 @@ def test_validation_requires_software_ttl_bypass():
     cfg.entangler.ttl_bypass.required = False
 
     assert "entangler.ttl_bypass.required must stay true" in validate_config(cfg)[0]
+
+
+def test_atom_photon_parity_requires_full_dio_ttl_exports():
+    cfg = load_config("gateware_build/configs/experiments/atom_photon_parity_6.yaml")
+
+    assert validate_config(cfg) == []
+    assert cfg.entangler.num_inputs == 2
+    assert cfg.entangler.num_generic_inputs == 2
+
+    cfg.entangler.num_generic_inputs = 0
+    errors = validate_config(cfg)
+
+    assert any("must expose all four input-side DIO channels" in error for error in errors)

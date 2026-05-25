@@ -12,12 +12,24 @@ This workspace orchestrates:
 - `repos/madmax-artiq-zynq`: Kasli-SoC and ARTIQ Zynq gateware build flow.
 - `repos/madmax-entangler-core`: custom Migen/Entangler logic.
 
+## Layout
+
+- `src/`: Python package and CLI implementation.
+- `gateware_build/`: editable gateware build workspace. Choose the experiment
+  branch in `gateware_build/configs/experiments/*.yaml`, edit/build JSON
+  descriptions in `gateware_build/descriptions/`, and keep generated runtime
+  files/artifacts in `gateware_build/generated/` and `gateware_build/artifacts/`.
+- `tests/`: regression tests for the Python tooling and newly made gateware
+  build contracts. Gateware-specific tests live under `tests/gateware/`.
+- `img/`: image/demo project.
+- `repos/`: external submodules used by the build.
+
 ## Documentation
 
-- [Entangler logic across branches](docs/entangler_logic_branches.md): compares
+- [Entangler logic across branches](gateware_build/docs/entangler_logic_branches.md): compares
   the original `madmax-entangler-core` logic with the atom-photon parity mode
   branch.
-- [Atom-photon parity 6 gateware helper](docs/atom_photon_parity_6_gateware.md):
+- [Atom-photon parity 6 gateware helper](gateware_build/docs/atom_photon_parity_6_gateware.md):
   documents the current parity-6 helper contract, registers, timing model, and
   hardware test ladder.
 
@@ -32,7 +44,7 @@ uv sync
 Initialize submodules:
 
 ```bash
-./scripts/init_submodules.sh
+./gateware_build/scripts/init_submodules.sh
 # or
 uv run madmax submodules init
 ```
@@ -45,10 +57,10 @@ uv run madmax setup
 
 ## Validate A Config
 
-The example config lives at `configs/experiments/2in_2out.yaml`.
+The example config lives at `gateware_build/configs/experiments/2in_2out.yaml`.
 
 ```bash
-uv run madmax validate --config configs/experiments/2in_2out.yaml
+uv run madmax validate --config gateware_build/configs/experiments/2in_2out.yaml
 ```
 
 Validation checks the schema, submodule-relative paths, entangler input/output counts, duplicate pads, and DIO pad names.
@@ -58,36 +70,38 @@ Validation checks the schema, submodule-relative paths, entangler input/output c
 Generate the settings file:
 
 ```bash
-uv run madmax generate-settings --config configs/experiments/2in_2out.yaml
+uv run madmax generate-settings --config gateware_build/configs/experiments/2in_2out.yaml
 ```
 
 Generate the ARTIQ `device_db.py`:
 
 ```bash
-uv run madmax generate-device-db --config configs/experiments/2in_2out.yaml
+uv run madmax generate-device-db --config gateware_build/configs/experiments/2in_2out.yaml
 ```
 
 Generate a smoke-test experiment:
 
 ```bash
-uv run madmax generate-experiment --config configs/experiments/2in_2out.yaml
+uv run madmax generate-experiment --config gateware_build/configs/experiments/2in_2out.yaml
 ```
 
 Generate the Kasli-SoC JSON system description:
 
 ```bash
-uv run madmax generate-artiq-json --config configs/experiments/2in_2out.yaml
+uv run madmax generate-artiq-json --config gateware_build/configs/experiments/2in_2out.yaml
 ```
 
-By default, generated files are written under `build/generated/`.
+The JSON description used by the build is written to the path selected by
+`build.description_json`, normally `gateware_build/descriptions/<variant>.json`.
+Other generated runtime files are written under `gateware_build/generated/`.
 
 Create a reproducibility artifact folder:
 
 ```bash
-uv run madmax generate-artifact --config configs/experiments/2in_2out.yaml
+uv run madmax generate-artifact --config gateware_build/configs/experiments/2in_2out.yaml
 ```
 
-Artifacts are written under `build/artifacts/` by default. Each artifact includes
+Artifacts are written under `gateware_build/artifacts/` by default. Each artifact includes
 the generated Kasli-SoC JSON description, runtime `settings.toml`, compile-time
 `entangler_settings.toml`, `device_db.py`, a smoke experiment, the source and
 normalized experiment config, and a `manifest.json` with the selected
@@ -99,12 +113,12 @@ commands.
 The initial implementation only performs dry-run build planning:
 
 ```bash
-uv run madmax build-gateware --config configs/experiments/2in_2out.yaml --dry-run
+uv run madmax build-gateware --config gateware_build/configs/experiments/2in_2out.yaml --dry-run
 ```
 
 The dry-run prints the end-to-end `madmax-artiq-zynq` flow:
 
-1. Build `build/gateware/top.bit` from the generated JSON description.
+1. Build `build/gateware/top.bit` from the JSON description in `gateware_build/descriptions/`.
 2. Build matching firmware, `runtime.bin` for `standalone`/`master` or `satman.bin` for `satellite`.
 3. Build the Kasli-SoC second-stage bootloader.
 4. Package `build/boot.bin`, the SD-card gateware/firmware image.
@@ -184,6 +198,10 @@ hard requirement, not an optional convenience. The intended contract is:
 - `enable = 1`: custom logic owns only the channels it needs.
 - Any channel that cannot be passed through must be called out in the design
   notes, JSON/card options, runtime driver, and tests.
+- If a custom helper is placed on a full DIO card, the generated bitstream and
+  `device_db.py` must still expose every normal TTL device for that card. For
+  parity-6 this means `ttl0` through `ttl7` must exist; spare input-side lines
+  are reserved with `entangler.num_generic_inputs`.
 
 This keeps a custom Entangler build from permanently stealing a DIO card during
 debugging or mixed experiments. Tests for a new logic mode should prove both the
@@ -272,11 +290,11 @@ pytest repos/madmax-entangler-core/test/test_<logic_name>*.py
 cd repos/madmax-artiq-zynq
 nix flake check
 cd ../../
-uv run madmax validate --config configs/experiments/<logic_name>.yaml
-uv run madmax generate-settings --config configs/experiments/<logic_name>.yaml
-uv run madmax generate-device-db --config configs/experiments/<logic_name>.yaml
-uv run madmax generate-experiment --config configs/experiments/<logic_name>.yaml
-uv run madmax build-gateware --config configs/experiments/<logic_name>.yaml --dry-run
+uv run madmax validate --config gateware_build/configs/experiments/<logic_name>.yaml
+uv run madmax generate-settings --config gateware_build/configs/experiments/<logic_name>.yaml
+uv run madmax generate-device-db --config gateware_build/configs/experiments/<logic_name>.yaml
+uv run madmax generate-experiment --config gateware_build/configs/experiments/<logic_name>.yaml
+uv run madmax build-gateware --config gateware_build/configs/experiments/<logic_name>.yaml --dry-run
 ```
 
 Only after the logic tests, generated runtime files, and dry-run build plan look
@@ -288,9 +306,9 @@ The Qt GUI is optional because Qt packages are large:
 
 ```bash
 uv sync --extra gui
-uv run madmax gui --config configs/experiments/2in_2out.yaml
+uv run madmax gui --config gateware_build/configs/experiments/2in_2out.yaml
 # or
-./scripts/run_gui.sh configs/experiments/2in_2out.yaml
+./gateware_build/scripts/run_gui.sh gateware_build/configs/experiments/2in_2out.yaml
 ```
 
 On Ubuntu/Debian X11 systems, Qt may need the native XCB cursor library:
@@ -304,9 +322,9 @@ The GUI lets you choose Kasli-SoC metadata, add ARTIQ cards, assign their EEM po
 If native Qt cannot start on the current system, use the browser fallback:
 
 ```bash
-uv run madmax web-gui --config configs/experiments/2in_2out.yaml
+uv run madmax web-gui --config gateware_build/configs/experiments/2in_2out.yaml
 # or
-./scripts/run_web_gui.sh configs/experiments/2in_2out.yaml
+./gateware_build/scripts/run_web_gui.sh gateware_build/configs/experiments/2in_2out.yaml
 ```
 
 The browser GUI also includes a **Custom Logic** tab for the Codex-driven
@@ -317,13 +335,13 @@ workflow described above.
 Start the browser GUI from the repository root:
 
 ```bash
-uv run madmax web-gui --config configs/experiments/2in_2out.yaml
+uv run madmax web-gui --config gateware_build/configs/experiments/2in_2out.yaml
 ```
 
 Or use the script wrapper:
 
 ```bash
-./scripts/run_web_gui.sh configs/experiments/2in_2out.yaml
+./gateware_build/scripts/run_web_gui.sh gateware_build/configs/experiments/2in_2out.yaml
 ```
 
 By default it serves:
@@ -336,7 +354,7 @@ Open that URL and choose **Custom Logic** in the top bar. To keep the browser
 from opening automatically, or to use a different port:
 
 ```bash
-uv run madmax web-gui --config configs/experiments/2in_2out.yaml --no-open --port 8766
+uv run madmax web-gui --config gateware_build/configs/experiments/2in_2out.yaml --no-open --port 8766
 ```
 
 Stop the GUI with `Ctrl+C` in the terminal that started it.
@@ -356,7 +374,7 @@ It can:
 - **ARTIQ environment scaffold**: create the matching
   `repos/madmax-artiq-env/<logic_name>/` environment and select smoke,
   loopback, timing-scan, stress, or benchmark experiment templates.
-- **Codex execution**: write the structured request to `ai/requests/` and, when
+- **Codex execution**: write the structured request to `gateware_build/ai/requests/` and, when
   the local Codex CLI is available, run `codex exec` against the workspace.
 - **Verification dashboard**: run tests, validation, generation, Nix flake
   checks, and dry-run builds with visible logs and pass/fail status.
@@ -365,14 +383,14 @@ It can:
 
 ## Scripts
 
-- `scripts/setup.sh`: create/update the `uv` environment and print workspace status.
-- `scripts/init_submodules.sh`: run `git submodule update --init --recursive`.
-- `scripts/generate_runtime.sh`: validate and generate settings, `device_db.py`, and a smoke experiment.
-- `scripts/build_gateware.sh`: dry-run the gateware build command.
-- `scripts/build_from_json.sh`: run the full Kasli-SoC JSON to `boot.bin` flow.
-- `scripts/run_gui.sh`: launch the native Python/Qt card mapping GUI.
-- `scripts/run_web_gui.sh`: launch the browser card mapping GUI fallback.
-- `scripts/smoke_test.sh`: run tests and a full generation dry run.
+- `gateware_build/scripts/setup.sh`: create/update the `uv` environment and print workspace status.
+- `gateware_build/scripts/init_submodules.sh`: run `git submodule update --init --recursive`.
+- `gateware_build/scripts/generate_runtime.sh`: validate and generate settings, `device_db.py`, and a smoke experiment.
+- `gateware_build/scripts/build_gateware.sh`: dry-run the gateware build command.
+- `gateware_build/scripts/build_from_json.sh`: run the full Kasli-SoC JSON to `boot.bin` flow.
+- `gateware_build/scripts/run_gui.sh`: launch the native Python/Qt card mapping GUI.
+- `gateware_build/scripts/run_web_gui.sh`: launch the browser card mapping GUI fallback.
+- `gateware_build/scripts/smoke_test.sh`: run tests and a full generation dry run.
 
 ## Future AI Pipeline
 

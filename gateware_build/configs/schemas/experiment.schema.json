@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MADMAX AI Gateware Experiment",
+  "type": "object",
+  "required": ["experiment", "target", "repositories", "hardware", "entangler", "build"],
+  "properties": {
+    "experiment": {
+      "type": "object",
+      "required": ["name", "description"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1}
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["board", "artiq_version", "variant"],
+      "properties": {
+        "board": {"type": "string"},
+        "artiq_version": {"type": "integer", "minimum": 1},
+        "variant": {"type": "string"},
+        "hw_rev": {"type": "string"},
+        "drtio_role": {"type": "string", "enum": ["standalone", "master", "satellite"]},
+        "rtio_frequency": {"type": "number", "minimum": 1}
+      }
+    },
+    "repositories": {
+      "type": "object",
+      "required": ["entangler_core_path", "artiq_zynq_path"],
+      "properties": {
+        "artiq_env_path": {"type": "string"},
+        "entangler_core_path": {"type": "string"},
+        "entangler_core_branch": {"type": "string"},
+        "artiq_zynq_path": {"type": "string"}
+      }
+    },
+    "hardware": {
+      "type": "object",
+      "required": ["dio_eem", "input_pads", "output_pads"],
+      "properties": {
+        "dio_eem": {"type": "integer", "minimum": 0},
+        "edge_counter": {"type": "boolean", "default": false},
+        "input_pads": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "output_pads": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+      }
+    },
+    "entangler": {
+      "type": "object",
+      "required": ["num_inputs", "num_outputs", "coincidence_window_mu", "timeout_mu", "fast_branch"],
+      "properties": {
+        "num_inputs": {"type": "integer", "minimum": 1},
+        "num_outputs": {"type": "integer", "minimum": 1},
+        "num_generic_inputs": {"type": "integer", "minimum": 0},
+        "num_patterns_allowed": {"type": "integer", "minimum": 1},
+        "coincidence_window_mu": {"type": "integer", "minimum": 1},
+        "timeout_mu": {"type": "integer", "minimum": 1},
+        "fast_branch": {"type": "boolean"},
+        "requested_goal": {"type": "string"},
+        "input_names": {"type": "array", "items": {"type": "string"}},
+        "output_names": {"type": "array", "items": {"type": "string"}},
+        "patterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "inputs"],
+            "properties": {
+              "name": {"type": "string"},
+              "inputs": {"type": "array", "items": {"type": "integer", "minimum": 0}}
+            }
+          }
+        },
+        "ttl_bypass": {
+          "type": "object",
+          "properties": {
+            "required": {"type": "boolean", "default": true},
+            "software_setting": {"type": "string", "default": "enable"},
+            "disabled_value": {"type": "integer", "default": 0},
+            "behavior": {"type": "string", "default": "normal ARTIQ TTL passthrough"},
+            "notes": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "required": ["output_dir", "dry_run", "command_template"],
+      "properties": {
+        "output_dir": {"type": "string"},
+        "artifact_dir": {"type": "string"},
+        "description_json": {"type": ["string", "null"]},
+        "create_artifact": {"type": "boolean"},
+        "dry_run": {"type": "boolean"},
+        "command_template": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

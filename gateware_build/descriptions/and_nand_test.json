@@ -1,0 +1,28 @@
+{
+    "target": "kasli_soc",
+    "variant": "and_nand_test",
+    "hw_rev": "v1.0",
+    "drtio_role": "standalone",
+    "rtio_frequency": 125000000.0,
+    "peripherals": [
+        {
+            "type": "dio",
+            "bank_direction_low": "input",
+            "bank_direction_high": "output",
+            "edge_counter": false,
+            "ports": [
+                0
+            ]
+        },
+        {
+            "type": "entangler",
+            "uses_reference": false,
+            "running_output": false,
+            "logic_mode": "and_nand_test",
+            "ports": [
+                0
+            ],
+            "overlay": true
+        }
+    ]
+}
