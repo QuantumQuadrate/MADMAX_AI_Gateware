@@ -1,6 +1,6 @@
 {
     "target": "kasli_soc",
-    "variant": "atom_photon_parity_6",
+    "variant": "SNAQ-Node-1-atom-photon-parity-6",
     "hw_rev": "v1.0",
     "drtio_role": "standalone",
     "rtio_frequency": 125000000.0,
@@ -12,7 +12,8 @@
             "edge_counter": true,
             "ports": [
                 0
-            ]
+            ],
+            "hw_rev": "v1.6"
         },
         {
             "type": "entangler",
@@ -23,6 +24,77 @@
                 0
             ],
             "overlay": true
+        },
+        {
+            "type": "dio",
+            "bank_direction_low": "input",
+            "bank_direction_high": "output",
+            "edge_counter": true,
+            "ports": [
+                1
+            ],
+            "hw_rev": "v1.6"
+        },
+        {
+            "type": "sampler",
+            "ports": [
+                2
+            ],
+            "hw_rev": "v2.3"
+        },
+        {
+            "type": "sampler",
+            "ports": [
+                3
+            ],
+            "hw_rev": "v2.3"
+        },
+        {
+            "type": "sampler",
+            "ports": [
+                4
+            ],
+            "hw_rev": "v2.3"
+        },
+        {
+            "type": "zotino",
+            "ports": [
+                5
+            ],
+            "hw_rev": "v1.3"
+        },
+        {
+            "type": "urukul",
+            "dds": "ad9910",
+            "clk_sel": 2,
+            "synchronization": true,
+            "ports": [
+                6,
+                7
+            ],
+            "hw_rev": "v1.5"
+        },
+        {
+            "type": "urukul",
+            "dds": "ad9910",
+            "clk_sel": 2,
+            "synchronization": true,
+            "ports": [
+                8,
+                9
+            ],
+            "hw_rev": "v1.5"
+        },
+        {
+            "type": "urukul",
+            "dds": "ad9910",
+            "clk_sel": 2,
+            "synchronization": true,
+            "ports": [
+                10,
+                11
+            ],
+            "hw_rev": "v1.5"
         }
     ]
 }

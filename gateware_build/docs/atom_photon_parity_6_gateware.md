@@ -78,6 +78,44 @@ ARTIQ TTL passthrough signal instead of from the parity helper. This is required
 for safe debugging: flashing a custom bitstream should not permanently steal the
 DIO card from ordinary TTL experiments.
 
+## Real Node 1 Boot Finding
+
+The first parity-6 SD-card image booted on the test Kasli-SoC but did not reach
+the network-address stage on the real experiment Node 1. The JTAG UART log
+showed SZL loading gateware and runtime, then runtime startup stopped before the
+usual I2C, RTIO clocking, network address, and Ethernet-link messages.
+
+The root cause was the generated parity-6 JSON description, not the SD card. It
+contained only DIO EEM0 plus the entangler overlay, which matched the test
+Kasli-SoC but not the real Node 1 crate. The working real Node 1 description is
+`kasli-soc-standalone_node1_with_edgecounters_en.json`: DIO0, DIO1, three
+Samplers, Zotino, and three Urukuls on EEM ports 0 through 11. Parity-6 gateware
+must preserve that full peripheral list and insert only the atom-photon
+entangler overlay on DIO port 0.
+
+The corrected parity-6 description is:
+
+```text
+gateware_build/descriptions/atom_photon_parity_6.json
+```
+
+It uses variant `SNAQ-Node-1-atom-photon-parity-6`, preserves the working Node 1
+peripherals and card hardware revisions, and inserts:
+
+```json
+{
+  "type": "entangler",
+  "uses_reference": false,
+  "running_output": false,
+  "logic_mode": "atom_photon_parity",
+  "ports": [0],
+  "overlay": true
+}
+```
+
+directly after the DIO0 peripheral. The parity runtime device DB targets the
+real Node 1 address, `192.168.1.129`.
+
 ## DIO/Entangler Overlay Build Contract
 
 The parity-6 system description intentionally lists the same EEM port twice:

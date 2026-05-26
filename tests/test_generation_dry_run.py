@@ -105,6 +105,43 @@ def test_atom_photon_parity_overlay_dio_exports_edge_counters():
     assert dio["edge_counter"] is True
 
 
+def test_atom_photon_parity_description_preserves_real_node1_crate():
+    cfg = load_config(Path("gateware_build/configs/experiments/atom_photon_parity_6.yaml"))
+    description = make_description(cfg)
+    peripherals = description["peripherals"]
+
+    assert description["variant"] == "SNAQ-Node-1-atom-photon-parity-6"
+    assert [peripheral["type"] for peripheral in peripherals] == [
+        "dio",
+        "entangler",
+        "dio",
+        "sampler",
+        "sampler",
+        "sampler",
+        "zotino",
+        "urukul",
+        "urukul",
+        "urukul",
+    ]
+    assert [peripheral["ports"] for peripheral in peripherals] == [
+        [0],
+        [0],
+        [1],
+        [2],
+        [3],
+        [4],
+        [5],
+        [6, 7],
+        [8, 9],
+        [10, 11],
+    ]
+    assert peripherals[0]["hw_rev"] == "v1.6"
+    assert peripherals[2]["hw_rev"] == "v1.6"
+    assert peripherals[1]["overlay"] is True
+    assert peripherals[1]["logic_mode"] == "atom_photon_parity"
+    assert validate_peripherals(peripherals, drtio_role="standalone") == []
+
+
 def test_custom_logic_branch_sets_entangler_logic_mode():
     cfg = load_config(DEFAULT_CONFIG)
     cfg.repositories.entangler_core_branch = "feature/and-nand-test"

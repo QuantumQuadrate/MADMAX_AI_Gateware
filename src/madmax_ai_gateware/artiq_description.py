@@ -89,6 +89,9 @@ def card_default_options(card_type: str, cfg: ExperimentConfig | None = None) ->
 
 
 def default_entangler_peripherals(cfg: ExperimentConfig) -> list[dict[str, Any]]:
+    if cfg.experiment.name == "atom_photon_parity_6":
+        return node1_atom_photon_parity_peripherals(cfg)
+
     dio_peripheral = {
         "type": "dio",
         "ports": [cfg.hardware.dio_eem],
@@ -103,6 +106,61 @@ def default_entangler_peripherals(cfg: ExperimentConfig) -> list[dict[str, Any]]
         **entangler_default_options(cfg),
     }
     return [dio_peripheral, entangler_peripheral]
+
+
+def node1_atom_photon_parity_peripherals(cfg: ExperimentConfig) -> list[dict[str, Any]]:
+    return [
+        {
+            "type": "dio",
+            "hw_rev": "v1.6",
+            "ports": [0],
+            "bank_direction_low": "input",
+            "bank_direction_high": "output",
+            "edge_counter": True,
+        },
+        {
+            "type": "entangler",
+            "ports": [0],
+            "overlay": True,
+            **entangler_default_options(cfg),
+        },
+        {
+            "type": "dio",
+            "hw_rev": "v1.6",
+            "ports": [1],
+            "bank_direction_low": "input",
+            "bank_direction_high": "output",
+            "edge_counter": True,
+        },
+        {"type": "sampler", "hw_rev": "v2.3", "ports": [2]},
+        {"type": "sampler", "hw_rev": "v2.3", "ports": [3]},
+        {"type": "sampler", "hw_rev": "v2.3", "ports": [4]},
+        {"type": "zotino", "hw_rev": "v1.3", "ports": [5]},
+        {
+            "type": "urukul",
+            "hw_rev": "v1.5",
+            "dds": "ad9910",
+            "ports": [6, 7],
+            "synchronization": True,
+            "clk_sel": 2,
+        },
+        {
+            "type": "urukul",
+            "hw_rev": "v1.5",
+            "dds": "ad9910",
+            "ports": [8, 9],
+            "synchronization": True,
+            "clk_sel": 2,
+        },
+        {
+            "type": "urukul",
+            "hw_rev": "v1.5",
+            "dds": "ad9910",
+            "ports": [10, 11],
+            "synchronization": True,
+            "clk_sel": 2,
+        },
+    ]
 
 
 def make_description(
