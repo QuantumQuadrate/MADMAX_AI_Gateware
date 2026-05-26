@@ -110,7 +110,7 @@ def test_atom_photon_parity_description_preserves_real_node1_crate():
     description = make_description(cfg)
     peripherals = description["peripherals"]
 
-    assert description["variant"] == "SNAQ-Node-1-atom-photon-parity-6"
+    assert description["variant"] == "SNAQ-Node-1"
     assert [peripheral["type"] for peripheral in peripherals] == [
         "dio",
         "entangler",

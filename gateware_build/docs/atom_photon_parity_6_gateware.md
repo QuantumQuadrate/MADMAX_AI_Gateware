@@ -99,7 +99,7 @@ The corrected parity-6 description is:
 gateware_build/descriptions/atom_photon_parity_6.json
 ```
 
-It uses variant `SNAQ-Node-1-atom-photon-parity-6`, preserves the working Node 1
+It keeps the working Node 1 variant ident, `SNAQ-Node-1`, preserves the Node 1
 peripherals and card hardware revisions, and inserts:
 
 ```json
