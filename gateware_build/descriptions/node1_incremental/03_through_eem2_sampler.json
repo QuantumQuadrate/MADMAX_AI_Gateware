@@ -1,0 +1,36 @@
+{
+    "target": "kasli_soc",
+    "variant": "SNAQ-Node-1",
+    "hw_rev": "v1.0",
+    "base": "standalone",
+    "rtio_frequency": 125000000.0,
+    "peripherals": [
+        {
+            "type": "dio",
+            "hw_rev": "v1.6",
+            "ports": [
+                0
+            ],
+            "bank_direction_low": "input",
+            "bank_direction_high": "output",
+            "edge_counter": true
+        },
+        {
+            "type": "dio",
+            "hw_rev": "v1.6",
+            "ports": [
+                1
+            ],
+            "bank_direction_low": "input",
+            "bank_direction_high": "output",
+            "edge_counter": true
+        },
+        {
+            "type": "sampler",
+            "hw_rev": "v2.3",
+            "ports": [
+                2
+            ]
+        }
+    ]
+}

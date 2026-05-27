@@ -23,14 +23,33 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DESC_ABS="$(realpath "$DESC")"
 ZYNQ="$ROOT/repos/madmax-artiq-zynq"
 ENTANGLER_CORE="$ROOT/repos/madmax-entangler-core"
-NIX_ENTANGLER_OVERRIDE=(--override-input entangler-core "path:$ENTANGLER_CORE")
+NIX_ARGS=()
 
 if [[ ! -f "$DESC_ABS" ]]; then
   echo "Description JSON does not exist: $DESC_ABS" >&2
   exit 1
 fi
 
-if [[ -n "$SETTINGS" ]]; then
+USES_ENTANGLER="$(
+  python3 - "$DESC_ABS" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as description_file:
+    description = json.load(description_file)
+
+print("yes" if any(
+    peripheral.get("type") == "entangler"
+    for peripheral in description.get("peripherals", [])
+) else "no")
+PY
+)"
+
+if [[ "$USES_ENTANGLER" == "yes" ]]; then
+  NIX_ARGS=(--override-input entangler-core "path:$ENTANGLER_CORE")
+fi
+
+if [[ -n "$SETTINGS" && "$USES_ENTANGLER" == "yes" ]]; then
   SETTINGS_ABS="$(realpath "$SETTINGS")"
   if [[ ! -f "$SETTINGS_ABS" ]]; then
     echo "Entangler settings file does not exist: $SETTINGS_ABS" >&2
@@ -38,9 +57,11 @@ if [[ -n "$SETTINGS" ]]; then
   fi
   cp "$SETTINGS_ABS" "$ZYNQ/entangler_settings.toml"
   echo "Updated $ZYNQ/entangler_settings.toml from $SETTINGS_ABS"
+elif [[ -n "$SETTINGS" ]]; then
+  echo "Ignoring entangler settings for native non-entangler JSON: $SETTINGS"
 fi
 
-if [[ -n "$CORE_BRANCH" ]]; then
+if [[ -n "$CORE_BRANCH" && "$USES_ENTANGLER" == "yes" ]]; then
   if [[ -n "$(git -C "$ENTANGLER_CORE" status --short)" ]]; then
     echo "madmax-entangler-core has uncommitted changes; refusing to switch branches" >&2
     exit 1
@@ -53,13 +74,19 @@ if [[ -n "$CORE_BRANCH" ]]; then
     echo "Unknown entangler-core branch: $CORE_BRANCH" >&2
     exit 1
   fi
+elif [[ -n "$CORE_BRANCH" ]]; then
+  echo "Ignoring entangler-core branch for native non-entangler JSON: $CORE_BRANCH"
 fi
 
-echo "Using entangler core checkout: $(git -C "$ENTANGLER_CORE" branch --show-current) ($(git -C "$ENTANGLER_CORE" rev-parse --short HEAD))"
+if [[ "$USES_ENTANGLER" == "yes" ]]; then
+  echo "Using entangler core checkout: $(git -C "$ENTANGLER_CORE" branch --show-current) ($(git -C "$ENTANGLER_CORE" rev-parse --short HEAD))"
+else
+  echo "Native non-entangler JSON: using the regular ARTIQ peripheral path"
+fi
 
 cd "$ZYNQ"
-nix develop "${NIX_ENTANGLER_OVERRIDE[@]}" --command bash -lc 'cd src && python gateware/kasli_soc.py -g ../build/gateware "$1"' bash "$DESC_ABS"
-nix develop "${NIX_ENTANGLER_OVERRIDE[@]}" --command bash -lc 'cd src && make TARGET=kasli_soc GWARGS="$1" "$2"' bash "$DESC_ABS" "$FIRMWARE"
+nix develop "${NIX_ARGS[@]}" --command bash -lc 'cd src && python gateware/kasli_soc.py -g ../build/gateware "$1"' bash "$DESC_ABS"
+nix develop "${NIX_ARGS[@]}" --command bash -lc 'cd src && make TARGET=kasli_soc GWARGS="$1" "$2"' bash "$DESC_ABS" "$FIRMWARE"
 
 mkdir -p "$ZYNQ/build"
 cd "$ZYNQ/build"
@@ -73,10 +100,10 @@ printf '%s\n' \
   "  firmware/armv7-none-eabihf/release/$FIRMWARE" \
   '}' > boot.bif
 
-nix develop "${NIX_ENTANGLER_OVERRIDE[@]}" .. --command mkbootimage boot.bif boot.bin
+nix develop "${NIX_ARGS[@]}" .. --command mkbootimage boot.bif boot.bin
 
 cd "$ZYNQ"
-nix develop "${NIX_ENTANGLER_OVERRIDE[@]}" --command bash -lc 'python entangler_device_db_maker.py "$1" > device_db.py' bash "$DESC_ABS"
+nix develop "${NIX_ARGS[@]}" --command bash -lc 'python entangler_device_db_maker.py "$1" > device_db.py' bash "$DESC_ABS"
 
 echo "Build complete:"
 echo "  $ZYNQ/build/boot.bin"
