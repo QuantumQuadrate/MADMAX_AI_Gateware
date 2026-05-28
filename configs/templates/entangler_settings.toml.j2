@@ -1,0 +1,12 @@
+# Generated from {{ source_config }}
+# Copy to repos/madmax-artiq-zynq/entangler_settings.toml before building Entangler gateware.
+
+NUM_OUTPUT_CHANNELS = {{ cfg.entangler.num_outputs }}
+NUM_ENTANGLER_INPUT_SIGNALS = {{ cfg.entangler.num_inputs }}
+NUM_GENERIC_INPUT_SIGNALS = 0
+NUM_PATTERNS_ALLOWED = 2
+
+COARSE_COUNTER_WIDTH = 11
+FULL_COUNTER_WIDTH = 14
+MAX_CYCLES_PER_RUN = 16383
+MAX_TRIGGER_COUNTS = 16383

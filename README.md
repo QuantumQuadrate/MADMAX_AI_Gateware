@@ -74,7 +74,11 @@ The initial implementation only performs dry-run build planning:
 uv run madmax build-gateware --config configs/experiments/2in_2out.yaml --dry-run
 ```
 
-The command is controlled by `build.command_template` in the YAML config. This keeps the ARTIQ/Kasli-SoC build details explicit and editable while the surrounding tooling remains stable.
+The command is controlled by `build.command_template` in the YAML config. The
+default command calls `scripts/build_from_json.sh`, which builds the bitstream,
+regenerates the matching CSR metadata, builds firmware from that metadata, and
+packages the final SD-card `boot.bin`. The raw `top.bit` alone is not a complete
+deployable artifact.
 
 ## Scripts
 
@@ -96,4 +100,3 @@ The intended flow is:
 6. Tests run before any hardware flashing is suggested.
 
 This keeps gateware, runtime configuration, and ARTIQ test experiments in sync without asking the AI to manually edit scattered files across multiple repositories.
-

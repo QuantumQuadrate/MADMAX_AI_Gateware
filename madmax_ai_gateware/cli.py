@@ -7,7 +7,9 @@ import typer
 from rich.console import Console
 
 from . import build_gateware as bg
+from . import generate_artiq_description as gad
 from . import generate_device_db as gdb
+from . import generate_entangler_settings as ges
 from . import generate_experiment as ge
 from . import generate_settings as gs
 from .config import load_config
@@ -94,6 +96,28 @@ def generate_device_db_command(
     console.print(f"[green]Generated device DB:[/green] {display_path(path)}")
 
 
+@app.command("generate-artiq-description")
+def generate_artiq_description_command(
+    config: Path = _config_option(),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output ARTIQ JSON description path."),
+) -> None:
+    """Generate the Kasli-SoC ARTIQ system-description JSON."""
+    cfg = _load_valid_config(config)
+    path = gad.generate_artiq_description(cfg, output)
+    console.print(f"[green]Generated ARTIQ description:[/green] {display_path(path)}")
+
+
+@app.command("generate-entangler-settings")
+def generate_entangler_settings_command(
+    config: Path = _config_option(),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output Entangler settings TOML path."),
+) -> None:
+    """Generate Entangler gateware settings for madmax-artiq-zynq."""
+    cfg = _load_valid_config(config)
+    path = ges.generate_entangler_settings(cfg, output)
+    console.print(f"[green]Generated Entangler settings:[/green] {display_path(path)}")
+
+
 @app.command("generate-experiment")
 def generate_experiment_command(
     config: Path = _config_option(),
@@ -133,4 +157,3 @@ def _load_valid_config(config: Path):
 
 if __name__ == "__main__":
     app()
-

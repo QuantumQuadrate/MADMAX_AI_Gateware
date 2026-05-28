@@ -32,5 +32,4 @@ entangler:
 build:
   output_dir: build/generated
   dry_run: true
-  command_template: "cd {artiq_zynq_path} && nix develop --command python src/gateware/{board}.py -g {gateware_build_dir} {artiq_description_json}"
-
+  command_template: "cp {entangler_settings_path} {artiq_zynq_path}/entangler_settings.toml && scripts/build_from_json.sh {artiq_description_json} standalone {output_dir}/artifacts"
